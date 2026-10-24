@@ -5,6 +5,7 @@ from pathlib import Path
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from app.domain.errors import DomainError
 from app.domain.models import DocumentAnalysis
@@ -102,7 +103,40 @@ class HwpDocxPostProcessor:
                     if original:
                         self.cell_format(cell_properties, original, fills, row_index)
                     column += colspan
+        self.page_numbers(document, analysis)
         document.save(path)
+
+    @staticmethod
+    def page_numbers(document, analysis: DocumentAnalysis):
+        placements = analysis.engine_data.get("page_numbers", [])
+        if not any(placements):
+            return
+        if len(placements) != len(document.sections):
+            raise DomainError("VALIDATION_FAILED", "쪽 번호의 구역 구조가 다릅니다.")
+        document.settings.odd_and_even_pages_header_footer = False
+        for index, (section, placement) in enumerate(zip(document.sections, placements)):
+            # 이전 구역 번호가 번호 없는 구역으로 연결되지 않도록 각 구역을 분리한다.
+            section.header.is_linked_to_previous = False
+            section.footer.is_linked_to_previous = False
+            section.different_first_page_header_footer = False
+            attributes = {"w:fmt": placement["format"] if placement else "decimal"}
+            if index == 0:
+                attributes["w:start"] = analysis.engine_data["page_start"]
+            replace_property(section._sectPr, "w:pgNumType", attributes, "w:cols")
+            if not placement or not placement["position"]:
+                continue
+            position = placement["position"]
+            paragraph = (section.header if position <= 3 else section.footer).paragraphs[0]
+            paragraph.alignment = [WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.CENTER, WD_ALIGN_PARAGRAPH.RIGHT][(position - 1) % 3]
+            paragraph.add_run(placement["prefix"])
+            field = OxmlElement("w:fldSimple")
+            field.set(qn("w:instr"), f' PAGE \\* {placement["field_format"]} ')
+            field.set(qn("w:dirty"), "true")
+            # 캐시 숫자를 고정 본문으로 만들지 않는다. 실제 번호는 Word가 계산한다.
+            paragraph._p.append(field)
+            paragraph.add_run(placement["suffix"])
+        settings = document.settings.element
+        replace_property(settings, "w:updateFields", {"w:val": "true"}, "w:compat")
 
     @staticmethod
     def cell_format(properties, cell: dict, fills: list[dict], row: int):

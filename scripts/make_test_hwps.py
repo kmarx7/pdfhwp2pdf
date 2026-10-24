@@ -23,6 +23,21 @@ def cell(text, **kwargs):
     return {"blocks": [paragraph(text)], **kwargs}
 
 
+def add_page_number(model: dict, section: int = 0, position: int = 5, number_format: int = 0,
+                    prefix: int = 0, suffix: int = 0, side: int = 45) -> None:
+    """테스트 입력 authoring. 앱의 DOCX 후처리와 별개인 실제 HWP 컨트롤을 넣는다."""
+    para = model["sections"][section]["paragraphs"][0]
+    index = len(para["controls"])
+    para["controls"].append({"Generic": {
+        "ctrl_id": list(b"pgnp"), "data": struct.pack("<I4H", (position << 8) | number_format, 0, prefix, suffix, side).hex(),
+        "paragraph_lists": [], "extras": [],
+    }})
+    para["chars"].insert(0, {"ExtCtrl": {"code": 21, "ctrl_id": list(b"pgnp"), "ctrl_index": index,
+                                        "payload": (b"pgnp"[::-1] + bytes(8)).hex()}})
+    para["header"]["ctrl_mask"] |= 1 << 21
+    para["header"]["hwp5_child_order"].append("Control")
+
+
 def make_test_hwps(folder: Path) -> dict[str, Path]:
     folder = folder.resolve()
     folder.mkdir(parents=True, exist_ok=True)
@@ -81,6 +96,24 @@ def make_test_hwps(folder: Path) -> dict[str, Path]:
         model_path.write_text(json.dumps(model, ensure_ascii=False))
         cli.run(["new", "--from", str(model_path), "-o", str(colored)], work)
         results["colored"] = colored
+        for name, source_name in (("page_numbers", "text"), ("roman_numbers", "text"),
+                                  ("section_numbers", "sections"), ("inherited_numbers", "sections")):
+            target = folder / f"{name}.hwp"
+            if target.exists():
+                raise FileExistsError(f"Fixture already exists: {target.name}")
+            model_path = work / f"{name}-model.json"
+            cli.run(["convert", str(results[source_name]), "-o", str(model_path), "--embed-bin"], work)
+            model = json.loads(model_path.read_text())
+            if name == "roman_numbers":
+                add_page_number(model, position=3, number_format=2, prefix=40, suffix=41, side=0)
+                model["header"]["properties"]["start_numbers"][0] = 4
+            else:
+                add_page_number(model)
+            if name == "section_numbers":
+                add_page_number(model, section=1, position=0, side=0)
+            model_path.write_text(json.dumps(model, ensure_ascii=False))
+            cli.run(["new", "--from", str(model_path), "-o", str(target)], work)
+            results[name] = target
     for name, flag in (("password_flag", 2), ("distribution", 4), ("drm", 16)):
         target = folder / f"{name}.hwp"
         if target.exists():

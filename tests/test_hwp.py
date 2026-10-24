@@ -1,5 +1,7 @@
 import copy
 import hashlib
+import json
+import struct
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
@@ -16,6 +18,7 @@ from app.postprocess.docx import DocxPostProcessor
 from app.postprocess.hwp import HwpDocxPostProcessor
 from app.quality.validator import QualityValidator, normalized
 from app.services.hwp_analyzer import HwpAnalyzer, guard_hwp_container
+from app.services.hwp_page_numbers import parse_page_number
 from scripts.make_test_hwps import make_test_hwps
 from tests.conftest import submit, wait_job
 
@@ -109,7 +112,7 @@ def test_hwp_protection_and_unsupported_features_fail_without_output(client, hwp
     assert not (client.app.state.jobs.space(job["job_id"]).path / "output").exists()
 
 
-@pytest.mark.parametrize(("control", "label"), [("pgnp", "쪽 번호 위치 설정"), ("zzzz", "미지원 문서 요소")])
+@pytest.mark.parametrize(("control", "label"), [("pghd", "쪽 감추기"), ("zzzz", "미지원 문서 요소")])
 def test_hwp_unsupported_error_names_detected_feature(control, label):
     model = {"sections": [{"paragraphs": [{
         "chars": [{"Text": "본문"}, {"ExtCtrl": {"ctrl_index": 0}}],
@@ -186,3 +189,82 @@ def test_hwp_binary_integrity_and_installer_rejects_invalid_archive(tmp_path):
     archive.write_bytes(b"invalid archive")
     with pytest.raises(ValueError, match="SHA-256"):
         install(archive)
+
+
+@pytest.mark.parametrize("kind", ["page_numbers", "roman_numbers", "section_numbers", "inherited_numbers"])
+def test_hwp_page_numbers_are_live_word_fields(client, hwp_samples, kind):
+    source = hwp_samples[kind]
+    before = hashlib.sha256(source.read_bytes()).hexdigest()
+    job = wait_job(client, submit(client, source).json()["job_id"])
+    assert job["state"] == "succeeded", job
+    document = Document(BytesIO(client.get(job["links"]["download"]).content))
+    section = document.sections[0]
+    part = section.header if kind == "roman_numbers" else section.footer
+    fields = part._element.findall(".//" + qn("w:fldSimple"))
+    assert len(fields) == 1
+    field = fields[0]
+    assert field.get(qn("w:dirty")) == "true"
+    assert field.get(qn("w:instr")).strip() == ("PAGE \\* ROMAN" if kind == "roman_numbers" else "PAGE \\* ARABIC")
+    paragraph = part.paragraphs[0]
+    assert paragraph.alignment == (2 if kind == "roman_numbers" else 1)  # Word right/center
+    assert paragraph.text == ("()" if kind == "roman_numbers" else "-  -")
+    # 번호는 본문 숫자/이미지가 아닌 자동 필드이며 번호를 계산할 뷰어가 필요하다.
+    assert field.find(qn("w:r")) is None
+    number_type = section._sectPr.find(qn("w:pgNumType"))
+    assert number_type.get(qn("w:start")) == ("4" if kind == "roman_numbers" else "1")
+    if kind == "section_numbers":
+        second = document.sections[1]
+        assert not second.header.is_linked_to_previous and not second.footer.is_linked_to_previous
+        assert not second.footer._element.findall(".//" + qn("w:fldSimple"))
+        assert not second.header._element.findall(".//" + qn("w:fldSimple"))
+    if kind == "inherited_numbers":
+        second = document.sections[1]
+        assert second.footer._element.find(".//" + qn("w:fldSimple")).get(qn("w:instr")).strip() == "PAGE \\* ARABIC"
+        assert second._sectPr.find(qn("w:pgNumType")).get(qn("w:start")) is None
+    assert any("PAGE 필드" in warning for warning in job["warnings"])
+    assert before == hashlib.sha256(source.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize(("position", "number_format", "data"), [
+    (7, 0, None), (8, 0, None), (5, 1, None), (5, 99, None), (5, 0, "00"), (5, 0, "not-hex"),
+])
+def test_hwp_unsupported_page_number_forms_are_not_silently_replaced(position, number_format, data):
+    payload = struct.pack("<I4H", (position << 8) | number_format, 0, 0, 0, 0).hex() if data is None else data
+    with pytest.raises(DomainError) as error:
+        parse_page_number({"data": payload})
+    assert error.value.code == "UNSUPPORTED_FEATURE"
+    assert error.value.details["features"] == ["pgnp"]
+    assert error.value.details["reason"]
+
+
+def test_hwp_mid_section_page_number_is_rejected(hwp_samples, tmp_path):
+    model_path = tmp_path / "source.json"
+    HwpCli().run(["convert", str(hwp_samples["page_numbers"]), "-o", str(model_path), "--embed-bin"], tmp_path)
+    model = json.loads(model_path.read_text())
+    first = model["sections"][0]["paragraphs"][0]
+    control = next(control for control in first["controls"] if "Generic" in control and control["Generic"]["ctrl_id"] == list(b"pgnp"))
+    # 첫 설정은 유지하되 본문 뒤에서 다른 위치를 지정한다.
+    last = model["sections"][0]["paragraphs"][-1]
+    changed = copy.deepcopy(control)
+    changed["Generic"]["data"] = struct.pack("<I4H", 2 << 8, 0, 0, 0, 0).hex()
+    index = len(last["controls"])
+    last["controls"].append(changed)
+    last["chars"].insert(0, {"ExtCtrl": {"ctrl_index": index}})
+    with pytest.raises(DomainError) as error:
+        HwpAnalyzer().inspect_model(model)
+    assert "구역 본문 중간" in error.value.message
+
+
+def test_hwp_missing_page_number_field_is_rejected(hwp_samples, tmp_path):
+    source = hwp_samples["page_numbers"]
+    analysis = HwpAnalyzer().analyze(source, tmp_path)
+    result = HwpCliEngine().convert(source, analysis, ConversionOptions(), tmp_path, lambda event: None)
+    HwpDocxPostProcessor().process(result.docx_path, analysis)
+    QualityValidator().validate(result.docx_path, analysis)
+    document = Document(result.docx_path)
+    field = document.sections[0].footer._element.find(".//" + qn("w:fldSimple"))
+    field.getparent().remove(field)
+    document.save(result.docx_path)
+    with pytest.raises(DomainError) as error:
+        QualityValidator().validate(result.docx_path, analysis)
+    assert error.value.code == "VALIDATION_FAILED"

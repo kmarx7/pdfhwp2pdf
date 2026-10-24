@@ -37,7 +37,7 @@ function applyFormat(format) {
   $("drop-title").textContent = `${name} 파일을 여기에 놓으세요`;
   $("upload-limit").textContent = format === "hwp" ? "HWP 5 · 최대 30 MiB · 실험 기능" : "PDF · 최대 30 MiB · 100페이지";
   const notes = format === "hwp"
-    ? ["HWP 5의 본문·표·이미지를 실험 지원해요.", "암호·배포용 문서와 HWPX는 지원하지 않아요.", "머리말·수식·도형 등 미지원 요소가 있으면 중단해요.", "페이지 배치와 글꼴은 결과 확인이 필요해요."]
+    ? ["HWP 5의 본문·표·이미지를 실험 지원해요.", "기본 쪽 번호를 지원해요. Word에서 필드를 업데이트해 주세요.", "암호·배포용 문서와 HWPX는 지원하지 않아요.", "머리말·수식·도형 등 미지원 요소가 있으면 중단해요.", "페이지 배치와 글꼴은 결과 확인이 필요해요."]
     : ["텍스트 기반 PDF를 지원해요.", "스캔 PDF와 암호화된 PDF는 지원하지 않아요.", "복잡한 표와 다단 편집은 결과 확인이 필요해요."];
   $("conversion-notes").replaceChildren(...notes.map((text) => {
     const li = document.createElement("li"); li.textContent = text; return li;
@@ -98,7 +98,7 @@ function showError(error) {
   // 이전 버전에서 저장된 실패 작업도 실제로 감지한 요소를 보여 준다.
   const legacyLabels = { pgnp: "쪽 번호 위치 설정", head: "머리말", foot: "꼬리말" };
   const features = error.info?.details?.features;
-  if (error.info?.code === "UNSUPPORTED_FEATURE" && Array.isArray(features) && features.length) {
+  if (error.info?.code === "UNSUPPORTED_FEATURE" && !error.info.details.reason && Array.isArray(features) && features.length) {
     const labels = error.info.details.feature_labels || features.map((feature) => legacyLabels[feature] || "미지원 문서 요소");
     $("error-suggestion").textContent = `감지된 미지원 요소: ${[...new Set(labels)].join(" · ")}. 이 요소를 보존하는 변환은 아직 지원하지 않습니다. 같은 파일을 다시 시도해도 해결되지 않습니다.`;
   }

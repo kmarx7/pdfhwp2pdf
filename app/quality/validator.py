@@ -120,3 +120,51 @@ class QualityValidator:
         for section, (width, height) in zip(document.sections, analysis.page_sizes):
             if abs(section.page_width.pt - width) > 1 or abs(section.page_height.pt - height) > 1:
                 raise ValueError("HWP page size changed")
+        placements = analysis.engine_data.get("page_numbers", [])
+        if any(placements):
+            QualityValidator.validate_hwp_page_numbers(document, placements, analysis.engine_data["page_start"])
+
+    @staticmethod
+    def validate_hwp_page_numbers(document, placements, start):
+        if len(document.sections) != len(placements):
+            raise ValueError("HWP page number section mismatch")
+        for index, (section, placement) in enumerate(zip(document.sections, placements)):
+            active = placement and placement["position"]
+            fields = []
+            for tag in ("headerReference", "footerReference"):
+                reference = section._sectPr.find(f"{W}{tag}")
+                if reference is None:
+                    raise ValueError("HWP page number header/footer reference missing")
+                rid = reference.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+                part = document.part.related_parts[rid]
+                fields.extend((tag, field) for field in part.element.findall(f".//{W}fldSimple"))
+            if len(fields) != (1 if active else 0):
+                raise ValueError("HWP page number field missing or duplicated")
+            if not active:
+                continue
+            tag, field = fields[0]
+            expected_tag = "headerReference" if placement["position"] <= 3 else "footerReference"
+            if tag != expected_tag or field.get(f"{W}instr", "").strip() != f'PAGE \\* {placement["field_format"]}':
+                raise ValueError("HWP page number location or instruction changed")
+            paragraph = field.getparent()
+            alignment = paragraph.find(f"{W}pPr/{W}jc")
+            expected_alignment = ("left", "center", "right")[(placement["position"] - 1) % 3]
+            if alignment is None or alignment.get(f"{W}val") != expected_alignment:
+                raise ValueError("HWP page number alignment changed")
+            before, after = [], []
+            passed_field = False
+            for child in paragraph:
+                if child is field:
+                    passed_field = True
+                else:
+                    (after if passed_field else before).extend(node.text or "" for node in child.findall(f".//{W}t"))
+            if "".join(before) != placement["prefix"] or "".join(after) != placement["suffix"]:
+                raise ValueError("HWP page number decorations changed")
+            number_type = section._sectPr.find(f"{W}pgNumType")
+            if number_type is None or number_type.get(f"{W}fmt") != placement["format"]:
+                raise ValueError("HWP page number format changed")
+            if number_type.get(f"{W}start") != (str(start) if index == 0 else None):
+                raise ValueError("HWP page number restart changed")
+        update = document.settings.element.find(f"{W}updateFields")
+        if update is None or update.get(f"{W}val") != "true":
+            raise ValueError("HWP page number field update missing")

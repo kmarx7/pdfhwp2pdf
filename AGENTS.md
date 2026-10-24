@@ -8,6 +8,7 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 
 - 사용자 지정 원격 저장소는 `https://github.com/kmarx7/pdfhwp2pdf.git`이다.
 - 사용자는 구현·테스트 후 커밋·푸시를 요청했다. 기능이 달라지는 작업은 별도 브랜치에서 진행한다. PDF는 `feat/pdf-docx-mvp`, HWP 추가는 `feat/hwp-docx`다.
+- HWP 쪽 번호 추가는 `feat/hwp-page-numbers`다. `services/hwp_page_numbers.py`의 제한된 pgnp 해석과 후처리·필드 검증을 함께 유지한다. 본문 중간 설정을 구역 전체 설정으로 조용히 바꾸지 않는다.
 - 원격 변경을 먼저 확인하며 강제 푸시·사용자 커밋 덮어쓰기를 하지 않는다. `.venv`, runtime, 사용자 문서·비밀 정보는 커밋하지 않는다.
 
 ## 작업 전 확인

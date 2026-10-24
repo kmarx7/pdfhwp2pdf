@@ -10,6 +10,7 @@ import olefile
 from app.domain.errors import DomainError
 from app.domain.models import DocumentAnalysis
 from app.engines.hwp.cli import HwpCli
+from app.services.hwp_page_numbers import parse_page_number, unsupported_page_number
 
 OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 MAX_STREAM = 20 * 1024 * 1024
@@ -104,12 +105,15 @@ class HwpAnalyzer:
     def inspect_model(self, model: dict) -> DocumentAnalysis:
         texts, tables, pictures, unsupported, sizes = [], [], [], set(), []
         paragraphs = 0
+        page_numbers = []
+        placement = None
+        section_has_text = False
         warnings = ["HWP 변환은 실험 기능입니다. 실제 Word 화면과 복잡한 실무 문서 품질은 미검증입니다.",
                     "원본 글꼴 이름·크기와 기본 문단/표를 옮기며 페이지 배치·장식·자동 번호의 동일함은 보장하지 않습니다.",
                     "이미지는 인라인으로 배치하며 회전·자르기 효과는 보존되지 않을 수 있습니다. Word에 원본 글꼴이 없으면 대체됩니다."]
 
         def walk(items: list, depth: int = 0):
-            nonlocal paragraphs
+            nonlocal paragraphs, placement, section_has_text
             if depth > 32:
                 raise DomainError("RESOURCE_LIMIT", "HWP 표 중첩 깊이가 제한을 초과했습니다.")
             for paragraph in items:
@@ -180,19 +184,30 @@ class HwpAnalyzer:
                             pass
                         elif name == "bokm" and not generic.get("paragraph_lists"):
                             warnings.append("책갈피 링크 위치는 보존하지 않습니다.")
+                        elif name == "pgnp":
+                            candidate = parse_page_number(generic)
+                            if depth or (section_has_text and candidate != placement):
+                                raise unsupported_page_number("표 안 또는 구역 본문 중간에서 번호 설정이 바뀝니다.")
+                            placement = candidate
                         else:
                             # 머리말·꼬리말·필드·도형·수식·각주는 조용히 누락시키지 않는다.
                             unsupported.add(name or "unknown_control")
                     else:
                         unsupported.add("unknown_control")
+                if any(value.strip() for value in text) or paragraph["controls"] and any(
+                    "Table" in control or "Picture" in control for control in paragraph["controls"]
+                ):
+                    section_has_text = True
 
         sections = model["sections"]
         if not sections or len(sections) > 100:
             raise DomainError("RESOURCE_LIMIT", "HWP 섹션 수가 지원 범위를 벗어났습니다.")
         for section in sections:
+            section_has_text = False
             if section.get("extras"):
                 unsupported.add("opaque_section_record")
             walk(section["paragraphs"])
+            page_numbers.append(placement.copy() if placement else None)
         if unsupported:
             features = sorted(unsupported)
             labels = [FEATURE_LABELS.get(feature, "미지원 문서 요소") for feature in features]
@@ -204,9 +219,14 @@ class HwpAnalyzer:
             raise DomainError("NO_EDITABLE_TEXT", "HWP에서 편집 가능한 본문 텍스트를 찾지 못했습니다.")
         image_hashes = self.picture_hashes(model, pictures)
         fonts = sorted({font["name"] for group in model["header"]["fonts"] for font in group})
+        start_numbers = model["header"].get("properties", {}).get("start_numbers", [1])
+        page_start = max(1, int(start_numbers[0]))
+        if any(page_numbers):
+            warnings.append("쪽 번호는 Word 자동 PAGE 필드입니다. Word에서 필드 업데이트 후 배치와 번호를 확인하세요. 원본과 실제 페이지 나눔은 다를 수 있습니다.")
         return DocumentAnalysis(None, sizes, texts, fonts, len(tables), list(dict.fromkeys(warnings)), "hwp",
                                 {"tables": tables, "image_hashes": image_hashes, "sections": len(sections),
-                                 "border_fills": model["header"]["border_fills"]})
+                                 "border_fills": model["header"]["border_fills"],
+                                 "page_numbers": page_numbers, "page_start": page_start})
 
     @staticmethod
     def picture_hashes(model: dict, pictures: list[dict]) -> list[str]:
