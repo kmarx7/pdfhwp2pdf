@@ -1,6 +1,6 @@
 # 시스템 아키텍처
 
-기준일: 2026-10-24. 아래는 1단계 아키텍처 기준 명세이며 계획·확장 구조를 포함한다. 2단계에 구현한 모듈·명세와의 차이·제한은 [STAGE2_REPORT](STAGE2_REPORT.md)에 기록한다. 현재 실행 코드 구조·명령은 [README](../README.md)를 기준으로 한다. 제품 범위는 [PRD](PRD.md), 변환 정책은 [CONVERSION_SPEC](CONVERSION_SPEC.md)를 따른다.
+기준일: 2026-10-24. 아래는 1단계 아키텍처 기준 명세이며 계획·확장 구조를 포함한다. PDF 구현은 [STAGE2_REPORT](STAGE2_REPORT.md), 후속 HWP 5 베타의 실제 구조·제한은 [HWP_REPORT](HWP_REPORT.md)에 기록한다. 현재 실행 코드 구조·명령은 [README](../README.md)를 기준으로 한다. 제품 범위는 [PRD](PRD.md), 변환 정책은 [CONVERSION_SPEC](CONVERSION_SPEC.md)를 따른다.
 
 ## 1. 실행 구성
 
@@ -12,7 +12,7 @@ flowchart TD
     Queue --> Analyzer[Document Analyzer]
     Analyzer --> Dispatcher[Conversion Dispatcher / EngineRegistry]
     Dispatcher --> PDF[PDF Conversion Engine]
-    Dispatcher --> HWP[HWP Conversion Engine: 비활성]
+    Dispatcher --> HWP[HWP Conversion Engine: hwp-cli 베타]
     Dispatcher --> HWPX[HWPX Conversion Engine: 비활성]
     PDF --> OCR[OCR Processor: 필요 시 후속]
     PDF --> Post[DOCX Post Processor]
@@ -37,7 +37,7 @@ flowchart TD
 | Document Analyzer | `DocumentAnalyzer.analyze`, `FileTypeDetector.detect` | 파일 판별, PDF 페이지별 분석, 보호·손상·지원 요소 확인 |
 | Conversion Dispatcher | `ConversionDispatcher.select`, `EngineRegistry.probe` | 형식·모드·환경별 후보 선택, 미지원·누락 의존성 구분 |
 | PDF Conversion Engine | `Pdf2DocxEngine` | `pdf2docx` 호출·결과 어댑트; 후보, 미구현 |
-| HWP Conversion Engine | 향후 `OnlyOfficeHwpEngine` 또는 `HwpModelEngine` | 검증 후에만 등록; 현재 구현 없음 |
+| HWP Conversion Engine | `HwpCliEngine`, `HwpAnalyzer`, `HwpDocxPostProcessor` | 고정 native CLI + OLE/지원 요소 분석 + 표 후처리·결과 검증. `.tools`가 없으면 unavailable |
 | HWPX Conversion Engine | 향후 `HwpxModelEngine` 또는 `OnlyOfficeHwpxEngine` | XML→공통 모델 또는 외부 엔진 경로; 현재 구현 없음 |
 | OCR Processor | `OCRProcessor` Protocol, 향후 `TesseractOCRProcessor` | 페이지 단위 텍스트·bbox·confidence 제공; 기본 비활성 |
 | DOCX Post Processor | `DocxPostProcessor.process`, `FontResolver.resolve` | section·한글 글꼴·스타일·관계 보정, 손실 경고 |
@@ -48,7 +48,7 @@ flowchart TD
 
 ## 3. 예정 폴더 구조
 
-아래 트리는 최종 확장을 포함한 설계 목표다. 2단계에 `app/`, `tests/`, `runtime/`, `pyproject.toml`, `requirements.lock`을 생성했다. API는 `app/main.py`, 작업 큐·저장·정리는 `app/services/job_service.py`에 통합했고 HWP/HWPX/OCR·렌더러·Dockerfile은 만들지 않았다. 실제 구조는 README를 참고한다.
+아래 트리는 최종 확장을 포함한 설계 목표다. API는 `app/main.py`, 작업 큐·저장·정리는 `app/services/job_service.py`에 통합했다. 후속 HWP 코드는 `engines/hwp/`, `services/hwp_analyzer.py`, `postprocess/hwp.py`에 추가했다. HWPX/OCR·렌더러·Dockerfile은 만들지 않았다. 실제 구조는 README와 HWP 보고서를 참고한다.
 
 ```text
 .

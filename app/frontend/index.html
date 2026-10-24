@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f6f8f7">
-  <title>문서잇 — PDF를 편집 가능한 Word로</title>
+  <title>문서잇 — PDF·HWP를 편집 가능한 Word로</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
@@ -17,33 +17,37 @@
         <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4M9 12h6M9 16h4"/></svg></span>
         <span>문서잇<span class="brand-dot">.</span></span>
       </a>
-      <div class="header-right"><span class="header-tool">PDF → Word</span><span class="local-badge"><i></i> 로컬에서 안전하게</span></div>
+      <div class="header-right"><span class="header-tool">PDF · HWP → Word</span><span class="local-badge"><i></i> 로컬에서 안전하게</span></div>
     </header>
 
     <main>
       <section class="hero" aria-labelledby="page-title">
         <span class="eyebrow"><span></span> 문서의 다음 작업을 이어가세요</span>
-        <h1 id="page-title">PDF의 내용을,<br><span>Word에서 자유롭게.</span></h1>
+        <h1 id="page-title">PDF도, 한글 문서도.<br><span>Word에서 자유롭게.</span></h1>
         <p>텍스트와 표를 편집할 수 있는 Word 문서로 바꿔보세요.<br class="desktop-break"> 파일은 외부로 전송하지 않고, 이 컴퓨터에서 처리합니다.</p>
       </section>
 
-      <section id="converter" class="converter-card" aria-label="PDF를 Word로 변환">
+      <section id="converter" class="converter-card" aria-label="PDF 또는 HWP를 Word로 변환">
         <div class="workspace">
-          <div class="section-heading"><span class="step-number">01</span><h2>PDF 파일 업로드</h2><span class="one-file">한 번에 한 파일</span></div>
+          <div class="section-heading"><span class="step-number">01</span><h2>문서 파일 업로드</h2><span class="one-file">한 번에 한 파일</span></div>
+          <div class="format-tabs" role="group" aria-label="입력 문서 형식">
+            <button id="pdf-format" type="button" aria-pressed="true">PDF → Word</button>
+            <button id="hwp-format" type="button" aria-pressed="false">HWP → Word <span>베타</span></button>
+          </div>
           <div id="drop-zone" class="drop-zone">
-            <input id="file-input" class="visually-hidden" type="file" accept=".pdf,application/pdf" aria-label="PDF 파일 선택">
+            <input id="file-input" class="visually-hidden" type="file" accept=".pdf,application/pdf,.hwp,application/x-hwp" aria-label="문서 파일 선택">
             <div class="file-illustration" aria-hidden="true">
-              <div class="paper paper-back"></div><div class="paper paper-front"><svg viewBox="0 0 40 48"><path d="M10 1h17l11 11v34H2V1z"/><path d="M26 1v12h12M10 23h20M10 29h20M10 35h13"/></svg><span>PDF</span></div>
+              <div class="paper paper-back"></div><div class="paper paper-front"><svg viewBox="0 0 40 48"><path d="M10 1h17l11 11v34H2V1z"/><path d="M26 1v12h12M10 23h20M10 29h20M10 35h13"/></svg><span id="paper-format">PDF</span></div>
               <span class="upload-symbol">↑</span>
             </div>
-            <h3>PDF 파일을 여기에 놓으세요</h3>
+            <h3 id="drop-title">PDF 파일을 여기에 놓으세요</h3>
             <p>또는 아래 버튼으로 파일을 선택하세요</p>
             <button id="choose-button" class="button button-secondary" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m-4 4 4-4 4 4M3 12v5h14v-5"/></svg>파일 선택</button>
-            <span class="upload-limit">PDF · 최대 30 MiB · 100페이지</span>
+            <span id="upload-limit" class="upload-limit">PDF · 최대 30 MiB · 100페이지</span>
           </div>
 
           <div id="selected-file" class="selected-file" hidden>
-            <span class="pdf-icon" aria-hidden="true">PDF</span>
+            <span id="selected-format" class="pdf-icon" aria-hidden="true">PDF</span>
             <div class="file-details"><strong id="file-name"></strong><span id="file-meta"></span></div>
             <button id="remove-file" class="icon-button" type="button" aria-label="선택 파일 지우기">×</button>
           </div>
@@ -64,10 +68,10 @@
 
         <aside class="settings-panel" aria-labelledby="settings-title">
           <div class="section-heading"><span class="step-number">02</span><h2 id="settings-title">변환 설정</h2></div>
-          <div class="format-flow" aria-label="PDF에서 DOCX로 변환"><div><span class="format-label pdf-label">PDF</span><span>원본 문서</span></div><svg viewBox="0 0 32 20" aria-hidden="true"><path d="M2 10h26m-6-6 6 6-6 6"/></svg><div><span class="format-label word-label">DOCX</span><span>편집 가능한 Word</span></div></div>
+          <div id="format-flow" class="format-flow" aria-label="PDF에서 DOCX로 변환"><div><span id="source-format" class="format-label pdf-label">PDF</span><span>원본 문서</span></div><svg viewBox="0 0 32 20" aria-hidden="true"><path d="M2 10h26m-6-6 6 6-6 6"/></svg><div><span class="format-label word-label">DOCX</span><span>편집 가능한 Word</span></div></div>
           <div class="mode-heading"><h3>변환 모드</h3><span>기본 모드</span></div>
           <label class="mode-option"><input type="radio" name="mode" value="balanced" checked><span><strong>균형 있게 변환</strong><small>문단과 표의 구조, 원본 배치를 함께 고려해요.</small></span><span class="selected-dot" aria-hidden="true"></span></label>
-          <div class="conversion-notes"><h3>변환 전 확인해 주세요</h3><ul><li>텍스트 기반 PDF를 지원해요.</li><li>스캔 PDF와 암호화된 PDF는 지원하지 않아요.</li><li>복잡한 표와 다단 편집은 결과 확인이 필요해요.</li></ul></div>
+          <div class="conversion-notes"><h3>변환 전 확인해 주세요</h3><ul id="conversion-notes"><li>텍스트 기반 PDF를 지원해요.</li><li>스캔 PDF와 암호화된 PDF는 지원하지 않아요.</li><li>복잡한 표와 다단 편집은 결과 확인이 필요해요.</li></ul></div>
           <button id="convert-button" class="button button-primary convert-button" type="button" disabled>Word로 변환하기 <span aria-hidden="true">→</span></button>
           <button id="cancel-button" class="text-button cancel-button" type="button" hidden>작업 취소 및 파일 삭제</button>
           <button id="reset-button" class="text-button reset-button" type="button" hidden>다른 파일 변환하기</button>
@@ -82,7 +86,7 @@
       </section>
     </main>
 
-    <footer class="site-footer"><span>문서잇 <span class="footer-divider">/</span> PDF → Word 로컬 MVP</span><p>앱이 꺼져 있는 동안 남은 임시 파일은 다음 실행 시 정리합니다.<br>변환 후 중요한 내용과 서식을 확인해 주세요.</p></footer>
+    <footer class="site-footer"><span>문서잇 <span class="footer-divider">/</span> PDF · HWP → Word 로컬 MVP</span><p>앱이 꺼져 있는 동안 남은 임시 파일은 다음 실행 시 정리합니다.<br>변환 후 중요한 내용과 서식을 확인해 주세요.</p></footer>
   </div>
 </body>
 </html>

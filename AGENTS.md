@@ -2,12 +2,12 @@
 
 ## 목적과 현재 단계
 
-PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이지 전체를 이미지로 삽입하는 방식과 숨은 텍스트로 편집 가능성을 가장하는 방식은 금지한다. 현재 2단계 PDF MVP를 구현했으며 합성 문서 기반 구조 검증까지 수행했다. 실제 Word 편집·실문서 품질 관문은 미완료다. 현재 구현 상태는 [README.md](README.md)와 [docs/STAGE2_REPORT.md](docs/STAGE2_REPORT.md)를 우선 확인한다. HWP/HWPX는 이번 단계에 구현하지 않는다.
+PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이지 전체를 이미지로 삽입하는 방식과 숨은 텍스트로 편집 가능성을 가장하는 방식은 금지한다. PDF MVP와 사용자 후속 요청에 따른 HWP 5 베타를 구현했다. 실제 Word 편집·실문서 품질 관문은 미완료다. 현재 구현 상태는 [README.md](README.md), [docs/STAGE2_REPORT.md](docs/STAGE2_REPORT.md), [docs/HWP_REPORT.md](docs/HWP_REPORT.md)를 우선 확인한다. HWPX는 현재 구현하지 않았다.
 
 ## Git 작업 방식
 
 - 사용자 지정 원격 저장소는 `https://github.com/kmarx7/pdfhwp2pdf.git`이다.
-- 사용자는 구현·테스트 후 커밋·푸시를 요청했다. 기능이 달라지는 작업은 별도 브랜치에서 진행한다. 이번 기능 브랜치는 `feat/pdf-docx-mvp`다.
+- 사용자는 구현·테스트 후 커밋·푸시를 요청했다. 기능이 달라지는 작업은 별도 브랜치에서 진행한다. PDF는 `feat/pdf-docx-mvp`, HWP 추가는 `feat/hwp-docx`다.
 - 원격 변경을 먼저 확인하며 강제 푸시·사용자 커밋 덮어쓰기를 하지 않는다. `.venv`, runtime, 사용자 문서·비밀 정보는 커밋하지 않는다.
 
 ## 작업 전 확인
@@ -22,6 +22,7 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 - 패키지 설치 성공을 import/버전 확인 및 최소 smoke로 검증한다. `requirements-probe.txt`는 운영 lock이 아니다. 검증된 의존성과 전이 버전을 lock하고 플랫폼별 차이를 기록한다.
 - 클라우드 서비스, 유료 API, 데이터베이스, 새 외부 인프라는 사용자 승인 없이 추가하지 않는다. 로컬 엔진도 패키지·시스템 앱 설치 범위와 자원 비용을 명확히 한다.
 - PyMuPDF·pyhwp·ONLYOFFICE 등 라이선스를 각 버전/의존성별로 기록한다. `pdf2docx`의 MIT를 전이 의존성 전체 라이선스로 취급하지 않는다.
+- HWP 엔진은 `hwp-cli 1.3.1` macOS arm64 배포물을 `.tools/`에 고정 설치한다. 실행 파일 무결성 검사를 유지하고 전역 설치·자동 업데이트를 하지 않는다. 고정 버전의 `--strict`는 DOCX 손실을 검사하지 않으므로 자체 미지원 요소·표·이미지 검증을 제거하지 않는다.
 
 ## 엔진 구현
 

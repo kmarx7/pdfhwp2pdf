@@ -1,0 +1,89 @@
+# HWP 5 → DOCX 베타 구현 및 검증
+
+검증일: 2026-10-24. 브랜치: `feat/hwp-docx`. 환경: macOS 27.0.1 / Apple Silicon arm64 / 프로젝트 `.venv` Python 3.11.15.
+
+## 구현 결과
+
+기존 PDF 변환 흐름에 **HWP 5 바이너리 문서의 실제 DOCX 출력**을 추가했다. 화면에서 `HWP → Word 베타`를 선택하거나 HWP를 드롭하면 HWP 엔진을 사용한다. 결과는 텍스트·표·이미지의 Word 개체이며 HWP를 페이지 이미지나 PDF로 바꾸는 중간 경로를 사용하지 않는다.
+
+| 모듈 | 역할 |
+| --- | --- |
+| `FileTypeDetector` | PDF/OLE/HWP 3 헤더 구별, 확장자 위장 거부. OLE 전체를 HWP로 가정하지 않고 다음 분석에서 FileHeader 확인 |
+| `HwpAnalyzer` | OLE의 실제 HWP5 서명·버전·보호 플래그, 내부/압축 크기 상한, IR 분석과 미지원 요소 거부 |
+| `HwpCli` | 고정 native 실행 파일 해시 확인, 인자 배열·전용 cwd·60초 호출 제한, 소유 native PID 이벤트 전달 |
+| `HwpCliEngine` | HWP 5→DOCX 실제 호출. 공통 `ConversionEngine` 계약을 통해 등록·선택 |
+| `HwpDocxPostProcessor` | 기존 본문·셀·병합을 유지하며 원본 열 너비·기본 테두리·배경·셀 여백 복원 |
+| `QualityValidator` | 문자 보존, 표 수·행/열·병합·열 치수, 이미지 원본 바이트 SHA-256, 섹션 수·페이지 크기 검사 |
+| 기존 supervisor | native 자식까지 같은 프로세스 그룹으로 종료, 전달받은 PID/생성 시각으로 RSS 합산, 실패 부분 파일 정리 |
+
+Mac 제한 환경에서는 전체 프로세스 열거가 거부될 수 있어 `psutil.children()`을 사용하지 않는다. worker가 직접 시작한 native 프로세스의 PID/생성 시각만 감독자에게 전달한다. 부모 API가 사라지면 세션 리더인 worker가 자기 작업 프로세스 그룹을 종료한다. OS 수준 sandbox나 정확한 순간 최대 RSS 측정을 보장하는 것은 아니다.
+
+## 엔진 선택과 설치
+
+`STAIxBWLB/hwp-cli` **v1.3.1** 공식 macOS arm64 배포물을 선택했다. 직접 DOCX export, 전체 JSON IR, HWP 바이너리 생성 기능을 실제 실행했다. 기존 조사 이후 확인한 후보이며 작은 새 프로젝트이므로 `experimental` 상태를 유지한다. 상용 프로그램·Java·Windows COM·DB·외부 변환 API를 도입하지 않았다. [공식 저장소](https://github.com/STAIxBWLB/hwp-cli), [고정 릴리스](https://github.com/STAIxBWLB/hwp-cli/releases/tag/v1.3.1)
+
+배포 아카이브 8,950,463 bytes를 내려받아 공식 SHA-256과 대조했다. 실행 파일도 별도 SHA-256으로 고정했다. 설치 위치는 `.tools/hwp-cli/1.3.1/`이며 git에서 제외한다. 설치 스크립트는 예상된 4개 일반 파일만 추출하고 경로 탈출·링크·크기·해시를 확인한다. 전역 환경이나 사용자 Office/글꼴 설치는 변경하지 않는다. [설치 원자료](research/hwp-engine.json)
+
+```bash
+.venv/bin/python scripts/install_hwp_engine.py
+# 공식 배포 파일을 미리 받은 경우
+.venv/bin/python scripts/install_hwp_engine.py --archive /path/to/hwp-v1.3.1-aarch64-apple-darwin.tar.gz
+npm run dev -- --restart
+```
+
+기존 `.tools` 설치에서 로컬 아카이브를 통한 설치 확인과 CLI `hwp 1.3.1` 실행을 확인했다. HWP 설치가 없거나 파일 해시가 다르면 API는 unavailable을 표시하고 HWP 변환을 활성화하지 않는다. PDF는 독립적으로 사용할 수 있다. Linux/Intel HWP 배포물은 이번에 활성화하거나 검증하지 않았다.
+
+엔진은 MIT OR Apache-2.0이며 [라이선스·NOTICE](../third_party/hwp-cli/NOTICE)를 보관했다. 독립 HWP fixture의 Apache-2.0 라이선스·출처·해시도 [fixture 안내](../tests/fixtures/hwp/README.md)에 기록했다.
+
+## 발견한 한계와 보완
+
+고정 릴리스의 DOCX writer는 내용 중심 export이며 페이지 레이아웃 복원 엔진이 아니다. 특히 다음을 확인했다. [고정 DOCX writer 소스](https://github.com/STAIxBWLB/hwp-cli/blob/v1.3.1/crates/hwp-convert/src/docx.rs)
+
+- `convert --strict`/손실 ledger는 HWP/HWPX 출력에만 적용되고 DOCX에는 적용되지 않는다. 이를 품질 보장으로 사용하지 않고 자체 분석기에서 미지원 control·알 수 없는 본문 record를 거부한다.
+- 기본 writer가 표 열 너비를 균등하게 만든다. 원본 셀의 `(열, 열 병합 수, 너비)` 제약으로 열 경계를 복원하고 DOCX의 grid/cell/table 너비를 보정했다. 원본 셀 내용이나 run을 재작성하지 않는다.
+- 기본 writer가 테두리를 검은 실선으로 만든다. 원본의 선 없음/단일 실선·색·두께와 단색 배경·셀 여백을 후처리했다. 복잡한 선·그라데이션/그림 채움은 조용히 대체하지 않고 거부한다.
+- 머리말·꼬리말이 생략되고 수식은 script text로 대체될 수 있다. 현재 이 기능들을 포함한 문서는 원본 내용을 누락시키지 않도록 실패시킨다.
+
+HWP 페이지 수는 파싱만으로 확정할 수 없어 API에서 `null`, UI에서 `페이지 수는 측정하지 않음`으로 표시한다. 섹션 크기와 페이지 수는 다른 개념이다.
+
+## 자동 테스트 결과
+
+```text
+.venv/bin/python -m pytest -q --junitxml=runtime/hwp-test-results.xml
+57 passed, 6 warnings in 11.33s
+```
+
+실패 0 / 오류 0 / skip 0. 기존 PDF·작업 관리 테스트 38개와 HWP 테스트 19개가 함께 통과했다. [집계 JSON](research/hwp-tests.json)
+
+| 검증 범위 | 확인한 내용 |
+| --- | --- |
+| 실제 HWP 출력 | 한글/영문 본문, Arial 18pt·굵게·색상 `112233`가 실제 `w:t`/run 속성에 존재 |
+| 일반 표 | 3행 2열·한글 셀 내용 일치, 40mm/110mm의 비균등 열 너비 보존 |
+| 병합 표 | 세로 2행 병합과 가로 2열 병합 유지, 실제 Word 셀 개체로 존재 |
+| 이미지 | 원본 바이트 hash 동일, Word 인라인 이미지 존재·개수 일치 |
+| 여러 섹션 | 2개 섹션과 각각의 본문·페이지 크기 유지. 실제 페이지 수와 동일하다고 주장하지 않음 |
+| 독립 입력 | Apache-2.0의 hahnlee/hwp-rs `hello_world.hwp`를 변환해 예상 본문 `Hello World!` 확인 |
+| 편집 개체 | python-docx로 본문·셀 수정 및 저장·재열기. 실제 Word 앱 수동 편집과 구분 |
+| 실패/보호 | 잘못된 OLE/HWP·확장자 위장·HWP 3·보호 플래그·머리말 미지원 거부, 실패 DOCX 다운로드 금지 |
+| 무결성 | 원본 hash 동일, 결과 표/이미지 손실 주입 거부, 다른 실행 파일·잘못된 설치 아카이브 거부 |
+| 수명/회귀 | 기존 큐·취소·timeout·RSS·삭제·TTL·재시작·다운로드·PDF 테스트 유지 |
+
+합성 HWP는 `scripts/make_test_hwps.py`가 본문·표·병합·이미지·섹션·머리말·단색 배경 표 7종과 보호 플래그 3종을 생성한다. HWPX는 이 테스트 입력을 작성하는 중간 파일일 뿐이며 앱 입력으로 지원하지 않는다. 보호 플래그 3종은 **실제 암호 알고리즘을 적용한 문서가 아니라** 거부 경로 확인용이다. 실제 암호화/DRM 변종 전체 검증은 남아 있다.
+
+경고 6개는 기존 Starlette TestClient httpx 사용 중단 예정 안내 및 PyMuPDF SWIG DeprecationWarning이다. `pip check`, JavaScript 구문, Python 구문도 확인했다.
+
+## 브라우저 검증
+
+실행 중이던 PDF 전용 서버를 프로젝트 경로·실행 명령을 확인한 뒤 새 0.3.0 서버로 재시작했다. 다른 프로그램이 8000번 포트를 사용하면 재시작 도구가 종료를 거부한다.
+
+독립 Chrome 세션에서 `HWP → Word 베타` 선택→실제 합성 표 HWP 업로드→성공 상태→다운로드 응답을 확인했다. 응답은 200, DOCX MIME, `attachment; filename="converted.docx"`, 3,770 bytes였다. 미지원 머리말 문서는 `UNSUPPORTED_FEATURE`와 한국어 원인으로 중단되고 다운로드가 숨겨졌다. 브라우저 오류 목록은 비어 있었다.
+
+360px에서 document scrollWidth 360px로 가로 넘침이 없었고 양쪽 화면을 직접 확인했다. [데스크톱](screenshots/hwp-mvp-desktop.png), [모바일](screenshots/hwp-mvp-mobile.png)
+
+## 남은 품질 범위
+
+실제 Microsoft Word 앱의 열기·편집·렌더링 비교, 한국어 실무 HWP 5개 이상의 정답 corpus, 정확한 읽기 순서·문단/제목 레벨·시각 점수는 미검증이다. 한 개 독립 문서와 합성 입력 성공을 전체 HWP 품질 관문 통과로 표현하지 않는다.
+
+HWP 3, HWPX, 보호 문서, 머리말·꼬리말·필드·수식·도형·각주·다단, 알 수 없는 본문 요소, 복잡한 표 장식은 현재 지원 범위 밖이다. 부유 배치·정확한 페이지 나눔·이미지 회전/자르기·글꼴 대체·자동 번호·페이지 장식은 동일성을 보장하지 않는다. 입력 원본 보존과 결과 1시간 수명 정책은 PDF와 동일하다.
+
+다음 단계는 사용자 실문서로 Word 편집·읽기 순서·표/서식 품질을 검증하고, 빈도가 높은 미지원 요소부터 별도 브랜치에서 추가하는 것이다. HWPX 및 Linux 지원도 별도 기능·플랫폼 관문으로 진행한다.

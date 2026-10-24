@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import signal
 from pathlib import Path
 import sys
 import threading
@@ -18,6 +19,8 @@ def heartbeat(parent: int) -> None:
     while True:
         time.sleep(1)
         if os.getppid() != parent:
+            if os.getpgrp() == os.getpid():
+                os.killpg(os.getpgrp(), signal.SIGTERM)
             os._exit(1)
 
 
@@ -29,14 +32,24 @@ def run(workspace: Path, max_pages: int, emit) -> None:
     from app.postprocess.docx import DocxPostProcessor
     from app.quality.validator import QualityValidator
 
-    source = workspace / "input/source.pdf"
+    sources = list((workspace / "input").iterdir())
+    if len(sources) != 1 or sources[0].suffix not in {".pdf", ".hwp"}:
+        raise DomainError("INVALID_DOCUMENT", "작업 입력 파일을 확인하지 못했습니다.", 400)
+    source = sources[0]
     before = hashlib.sha256(source.read_bytes()).hexdigest()
     emit({"stage": "analyzing"})
-    analysis = DocumentAnalyzer().analyze(source, max_pages)
+    if source.suffix == ".hwp":
+        from app.services.hwp_analyzer import HwpAnalyzer
+        analysis = HwpAnalyzer().analyze(source, workspace / "work", emit)
+    else:
+        analysis = DocumentAnalyzer().analyze(source, max_pages)
     emit({"stage": "converting", "pages": analysis.pages, "warnings": analysis.warnings})
     engine = ConversionDispatcher().select(analysis, ConversionOptions())
     result = engine.convert(source, analysis, ConversionOptions(), workspace / "work", emit)
     emit({"stage": "postprocessing"})
+    if analysis.format == "hwp":
+        from app.postprocess.hwp import HwpDocxPostProcessor
+        HwpDocxPostProcessor().process(result.docx_path, analysis)
     DocxPostProcessor().process(result.docx_path)
     emit({"stage": "validating"})
     quality = QualityValidator().validate(result.docx_path, analysis)
@@ -45,6 +58,7 @@ def run(workspace: Path, max_pages: int, emit) -> None:
     quality["engine"] = {"id": result.engine_id, "version": result.version}
     quality["input_sha256"] = before
     quality["fonts"] = analysis.fonts
+    quality["source_format"] = analysis.format
     quality["platform"] = {"python": sys.version.split()[0], "system": sys.platform}
     output = workspace / "output/result.docx"
     result.docx_path.replace(output)

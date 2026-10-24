@@ -10,13 +10,14 @@ class ConversionOptions:
 
 @dataclass
 class DocumentAnalysis:
-    pages: int
+    pages: int | None
     page_sizes: list[tuple[float, float]]
     page_texts: list[str]
     fonts: list[str]
     table_count: int = 0
     warnings: list[str] = field(default_factory=list)
     format: str = "pdf"
+    engine_data: dict = field(default_factory=dict, repr=False)
 
 
 @dataclass(frozen=True)

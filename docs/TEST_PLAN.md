@@ -1,6 +1,6 @@
 # 테스트 계획과 완료 기준
 
-기준일: 2026-10-24. 아래 행렬은 전체 제품의 검증 계획이며 전부 통과한 테스트 목록이 아니다. 2단계의 실제 pytest·브라우저 실행 결과는 [STAGE2_REPORT](STAGE2_REPORT.md)에 별도로 기록했다. §6의 설치 실패 기록은 1단계 당시 이력이며 현재 PDF 의존성 설치·합성 문서 변환은 확인되었다. 품질 계산식과 목표의 기준은 [CONVERSION_SPEC §7](CONVERSION_SPEC.md#7-품질-평가-설계)이다.
+기준일: 2026-10-24. 아래 행렬은 전체 제품의 검증 계획이며 전부 통과한 테스트 목록이 아니다. PDF 실행 결과는 [STAGE2_REPORT](STAGE2_REPORT.md), 후속 HWP 및 PDF 회귀 결과는 [HWP_REPORT](HWP_REPORT.md)에 기록했다. §6의 설치 실패 기록은 1단계 당시 이력이다. 품질 계산식과 목표의 기준은 [CONVERSION_SPEC §7](CONVERSION_SPEC.md#7-품질-평가-설계)이다.
 
 ## 1. 검증 수준 구분
 

@@ -16,6 +16,7 @@ import psutil
 from app.config import PROJECT_ROOT, Settings
 from app.domain.errors import DomainError
 from app.infrastructure.workspace import JobWorkspace, atomic_json, directory_bytes
+from app.services.analyzer import FileTypeDetector
 
 TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
 STAGES = {"analyzing", "converting", "postprocessing", "validating"}
@@ -144,8 +145,9 @@ class JobService:
         if mode != "balanced" or ocr != "off":
             raise DomainError("INVALID_OPTIONS", "현재 균형 모드만 지원하며 OCR은 제공하지 않습니다.")
         # 사용자 파일명은 디스크 경로·다운로드 헤더·메타데이터로 사용하지 않는다.
-        if not (upload.filename or "").lower().endswith(".pdf"):
-            raise DomainError("UNSUPPORTED_FORMAT", "현재 PDF 파일만 변환할 수 있습니다.", 415)
+        extension = Path(upload.filename or "").suffix.lower()
+        if extension not in {".pdf", ".hwp"}:
+            raise DomainError("UNSUPPORTED_FORMAT", "현재 PDF와 HWP 5 파일을 지원합니다.", 415)
         if self.queue.full():
             raise DomainError("QUEUE_FULL", "변환 대기열이 가득 찼습니다.", 429)
         if directory_bytes(self.root) >= self.settings.max_workspace_bytes:
@@ -156,24 +158,24 @@ class JobService:
         committed = False
         try:
             size = 0
-            target = space.path / "input/source.pdf"
+            target = space.path / f"input/source{extension}"
             with target.open("wb") as stream:
                 while chunk := await upload.read(64 * 1024):
                     size += len(chunk)
                     if size > self.settings.max_upload_bytes:
-                        raise DomainError("FILE_TOO_LARGE", "PDF 파일은 30 MiB까지 업로드할 수 있습니다.", 413)
+                        raise DomainError("FILE_TOO_LARGE", "문서 파일은 30 MiB까지 업로드할 수 있습니다.", 413)
                     stream.write(chunk)
             if not size:
                 raise DomainError("INVALID_DOCUMENT", "비어 있는 파일입니다.", 400)
-            with target.open("rb") as stream:
-                if not stream.read(8).startswith(b"%PDF-"):
-                    raise DomainError("INVALID_DOCUMENT", "PDF 형식의 파일이 아닙니다.", 400)
+            detected = FileTypeDetector().detect(target)
+            if extension != f".{detected}":
+                raise DomainError("FORMAT_MISMATCH", "파일 확장자와 실제 문서 형식이 다릅니다.", 400)
             target.chmod(0o400)
             if self.queue.full():
                 raise DomainError("QUEUE_FULL", "변환 대기열이 가득 찼습니다.", 429)
             if directory_bytes(self.root) > self.settings.max_workspace_bytes:
                 raise DomainError("RESOURCE_LIMIT", "임시 저장 공간이 부족합니다.", 503)
-            job = {"job_id": job_id, "state": "queued", "stage": "waiting", "format": "pdf",
+            job = {"job_id": job_id, "state": "queued", "stage": "waiting", "format": detected,
                    "mode": mode, "size_bytes": size, "pages": None, "engine": None,
                    "warnings": [], "error": None, "created_at": self.clock(), "expires_at": None}
             self.jobs[job_id] = job
@@ -269,6 +271,7 @@ class JobService:
         space = self.space(job["job_id"])
         result = None
         failure = None
+        native_processes = {}
         start = time.monotonic()
         process = await asyncio.create_subprocess_exec(
             sys.executable, "-m", "app.infrastructure.worker", str(space.path), str(self.settings.max_pages), str(os.getpid()),
@@ -296,6 +299,10 @@ class JobService:
                     result = event
                 elif stage == "failed":
                     failure = event["error"]
+                elif stage == "native_started":
+                    native_processes[event["pid"]] = event["created_at"]
+                elif stage == "native_finished":
+                    native_processes.pop(event["pid"], None)
 
         reader = asyncio.create_task(events())
         peak_memory = 0
@@ -307,7 +314,14 @@ class JobService:
                 if time.monotonic() - start >= self.settings.timeout_seconds:
                     raise DomainError("CONVERSION_TIMEOUT", "변환 제한 시간(180초)을 초과했습니다.")
                 try:
-                    memory = psutil.Process(process.pid).memory_info().rss
+                    owned = psutil.Process(process.pid)
+                    memory = owned.memory_info().rss
+                    # HWP native CLI는 worker의 자식이다. 그 메모리도 작업 상한에 포함한다.
+                    for pid, created_at in list(native_processes.items()):
+                        with suppress(psutil.NoSuchProcess):
+                            child = psutil.Process(pid)
+                            if child.create_time() == created_at:
+                                memory += child.memory_info().rss
                     peak_memory = max(peak_memory, memory)
                     if memory > self.settings.max_memory_bytes or directory_bytes(self.root) > self.settings.max_workspace_bytes:
                         raise DomainError("RESOURCE_LIMIT", "변환 작업이 메모리 또는 저장 공간 제한을 초과했습니다.")

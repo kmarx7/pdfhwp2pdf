@@ -1,0 +1,15 @@
+{
+  "name": "hwp-cli",
+  "version": "1.3.1",
+  "release": "https://github.com/STAIxBWLB/hwp-cli/releases/tag/v1.3.1",
+  "archive_sha256": "60da60c55050aa9d72e74c0fe6bfc9b4ead9e3732cfb794cf0355ef8331926e4",
+  "binary_sha256": "b8fe27efa4617729e22605f0e1d95f66e194c7b895e1eeadc9ad5d19300edba0",
+  "actual_binary_sha256": "b8fe27efa4617729e22605f0e1d95f66e194c7b895e1eeadc9ad5d19300edba0",
+  "available": true,
+  "system": "Darwin",
+  "machine": "arm64",
+  "python": "3.11.15",
+  "license": "MIT OR Apache-2.0",
+  "word_manual_edit": "not_performed",
+  "complex_business_document_quality": "not_verified"
+}

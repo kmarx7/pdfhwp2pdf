@@ -3,7 +3,7 @@ const $ = (id) => document.getElementById(id);
 const stages = ["analyzing", "converting", "postprocessing", "validating"];
 const messages = {
   queued: ["변환 순서를 기다리고 있어요", "앞선 작업이 끝나면 자동으로 시작합니다."],
-  analyzing: ["PDF를 살펴보고 있어요", "텍스트와 표, 페이지 정보를 확인합니다."],
+  analyzing: ["문서를 살펴보고 있어요", "텍스트와 표, 문서 구조를 확인합니다."],
   converting: ["Word 문서로 변환하고 있어요", "텍스트와 표를 편집 가능한 문서 개체로 옮깁니다."],
   postprocessing: ["문서 정보를 정리하고 있어요", "변환된 문서의 속성을 정리합니다."],
   validating: ["변환 결과를 확인하고 있어요", "텍스트 누락과 Word 표 구조를 검사합니다."],
@@ -16,6 +16,43 @@ let timer = null;
 let generation = 0;
 let currentJob = null;
 let engineReady = false;
+let formats = {};
+let selectedFormat = "pdf";
+
+function documentLabel(format) {
+  return format === "hwp" ? "HWP 한글 문서" : "PDF 문서";
+}
+
+function applyFormat(format) {
+  selectedFormat = format;
+  engineReady = Boolean(formats[format] && formats[format].availability !== "unavailable");
+  const name = format.toUpperCase();
+  $("pdf-format").setAttribute("aria-pressed", String(format === "pdf"));
+  $("hwp-format").setAttribute("aria-pressed", String(format === "hwp"));
+  $("paper-format").textContent = name;
+  $("selected-format").textContent = name;
+  $("source-format").textContent = name;
+  $("source-format").classList.toggle("hwp-label", format === "hwp");
+  $("format-flow").setAttribute("aria-label", `${name}에서 DOCX로 변환`);
+  $("drop-title").textContent = `${name} 파일을 여기에 놓으세요`;
+  $("upload-limit").textContent = format === "hwp" ? "HWP 5 · 최대 30 MiB · 실험 기능" : "PDF · 최대 30 MiB · 100페이지";
+  const notes = format === "hwp"
+    ? ["HWP 5의 본문·표·이미지를 실험 지원해요.", "암호·배포용 문서와 HWPX는 지원하지 않아요.", "머리말·수식·도형 등 미지원 요소가 있으면 중단해요.", "페이지 배치와 글꼴은 결과 확인이 필요해요."]
+    : ["텍스트 기반 PDF를 지원해요.", "스캔 PDF와 암호화된 PDF는 지원하지 않아요.", "복잡한 표와 다단 편집은 결과 확인이 필요해요."];
+  $("conversion-notes").replaceChildren(...notes.map((text) => {
+    const li = document.createElement("li"); li.textContent = text; return li;
+  }));
+  $("engine-notice").textContent = engineReady
+    ? `${name} 파일을 ${file ? "확인했어요. 변환을 시작해 보세요." : "먼저 선택해 주세요."}`
+    : `${name} 변환 엔진을 사용할 수 없습니다. 서버 설치 상태를 확인해 주세요.`;
+}
+
+async function chooseFormat(format) {
+  if (busy || selectedFormat === format) return;
+  await reset();
+  applyFormat(format);
+  setBusy(false);
+}
 
 function fileSize(bytes) {
   return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1024 / 1024).toFixed(2)} MiB`;
@@ -38,6 +75,8 @@ function setBusy(value) {
   $("file-input").disabled = value;
   $("choose-button").disabled = value;
   $("remove-file").disabled = value;
+  $("pdf-format").disabled = value;
+  $("hwp-format").disabled = value;
   $("convert-button").disabled = value || !file || !engineReady;
   $("cancel-button").hidden = !value || !jobId;
 }
@@ -67,8 +106,9 @@ function clearStatus() {
 
 async function selectFile(selected) {
   if (busy || !selected) return;
-  if (!selected.name.toLowerCase().endsWith(".pdf")) {
-    showError({ message: "PDF 파일을 선택해 주세요.", info: { code: "UNSUPPORTED_FORMAT", suggestion: "현재 PDF 형식만 지원합니다." } });
+  const extension = selected.name.toLowerCase().split(".").pop();
+  if (!["pdf", "hwp"].includes(extension)) {
+    showError({ message: "PDF 또는 HWP 파일을 선택해 주세요.", info: { code: "UNSUPPORTED_FORMAT", suggestion: "현재 PDF와 HWP 5 형식을 지원합니다. HWPX는 아직 지원하지 않습니다." } });
     return;
   }
   if (!selected.size || selected.size > 30 * 1024 * 1024) {
@@ -77,13 +117,13 @@ async function selectFile(selected) {
   }
   await discardJob();
   file = selected;
+  applyFormat(extension);
   clearStatus();
   $("drop-zone").hidden = true;
   $("selected-file").hidden = false;
   $("file-name").textContent = selected.name;
   $("file-name").title = selected.name;
-  $("file-meta").textContent = `PDF 문서 · ${fileSize(selected.size)}`;
-  $("engine-notice").textContent = "파일을 확인했어요. 변환을 시작해 보세요.";
+  $("file-meta").textContent = `${documentLabel(extension)} · ${fileSize(selected.size)}`;
   setBusy(false);
 }
 
@@ -106,7 +146,7 @@ async function reset() {
   $("file-input").value = "";
   $("selected-file").hidden = true;
   $("drop-zone").hidden = false;
-  $("engine-notice").textContent = "PDF 파일을 먼저 선택해 주세요.";
+  applyFormat(selectedFormat);
   clearStatus();
   setBusy(false);
   $("choose-button").focus();
@@ -118,7 +158,8 @@ async function poll(id, token) {
     const job = await (await request(`/api/v1/jobs/${id}`)).json();
     if (token !== generation || id !== jobId) return;
     currentJob = job;
-    $("file-meta").textContent = `PDF 문서 · ${fileSize(job.size_bytes)}${job.progress.total_pages ? ` · ${job.progress.total_pages}페이지` : ""}`;
+    applyFormat(job.format);
+    $("file-meta").textContent = `${documentLabel(job.format)} · ${fileSize(job.size_bytes)}${job.progress.total_pages ? ` · ${job.progress.total_pages}페이지` : job.format === "hwp" ? " · 페이지 수는 측정하지 않음" : ""}`;
     $("error-detail").hidden = true;
     if (job.state === "succeeded") {
       setBusy(false);
@@ -181,6 +222,8 @@ async function convert() {
 }
 
 $("choose-button").addEventListener("click", () => $("file-input").click());
+$("pdf-format").addEventListener("click", () => chooseFormat("pdf"));
+$("hwp-format").addEventListener("click", () => chooseFormat("hwp"));
 $("file-input").addEventListener("change", (event) => selectFile(event.target.files[0]));
 $("remove-file").addEventListener("click", reset);
 $("reset-button").addEventListener("click", reset);
@@ -197,7 +240,7 @@ for (const event of ["dragenter", "dragover"]) $("drop-zone").addEventListener(e
 for (const event of ["dragleave", "drop"]) $("drop-zone").addEventListener(event, (e) => { e.preventDefault(); $("drop-zone").classList.remove("dragging"); });
 $("drop-zone").addEventListener("drop", (event) => {
   if (event.dataTransfer.files.length !== 1) {
-    showError({ message: "파일을 한 개씩 선택해 주세요.", info: { code: "ONE_FILE_REQUIRED", suggestion: "한 번에 하나의 PDF를 변환합니다." } }); return;
+    showError({ message: "파일을 한 개씩 선택해 주세요.", info: { code: "ONE_FILE_REQUIRED", suggestion: "한 번에 하나의 문서를 변환합니다." } }); return;
   }
   selectFile(event.dataTransfer.files[0]);
 });
@@ -231,8 +274,8 @@ async function initialize() {
     const [session, capability] = await Promise.all([request("/api/v1/session"), request("/api/v1/capabilities")]);
     csrf = (await session.json()).csrf_token;
     const capabilities = await capability.json();
-    engineReady = capabilities.formats.pdf.availability !== "unavailable";
-    if (!engineReady) throw new Error("PDF 변환 엔진을 사용할 수 없습니다. 서버의 패키지 설치 상태를 확인하세요.");
+    formats = capabilities.formats;
+    applyFormat(selectedFormat);
     setBusy(false);
     if (jobId) {
       $("drop-zone").hidden = true; $("selected-file").hidden = false;

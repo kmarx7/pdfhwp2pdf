@@ -10,6 +10,8 @@ class FileTypeDetector:
     def detect(self, source: Path) -> str:
         with source.open("rb") as stream:
             header = stream.read(1024)
+        if header.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1") or header.startswith(b"HWP Document File V3"):
+            return "hwp"
         if not header.startswith(b"%PDF-"):
             raise DomainError("INVALID_DOCUMENT", "PDF 파일의 헤더를 확인할 수 없습니다.", 400)
         return "pdf"
@@ -17,7 +19,8 @@ class FileTypeDetector:
 
 class DocumentAnalyzer:
     def analyze(self, source: Path, max_pages: int = 100) -> DocumentAnalysis:
-        FileTypeDetector().detect(source)
+        if FileTypeDetector().detect(source) != "pdf":
+            raise DomainError("FORMAT_MISMATCH", "PDF 확장자와 실제 파일 형식이 다릅니다.", 400)
         try:
             with pymupdf.open(source) as pdf:
                 # 소유자 암호만 설정된 파일도 MVP에서는 보호 문서로 거부한다.

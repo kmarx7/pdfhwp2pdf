@@ -10,3 +10,4 @@ runtime/
 !.env.example
 .DS_Store
 pdfhwp-probe-*/
+.tools/

@@ -16,6 +16,7 @@ from app.api.security import LocalSecurityMiddleware, check_csrf
 from app.config import Settings
 from app.domain.errors import DomainError
 from app.engines.pdf.pdf2docx_engine import Pdf2DocxEngine
+from app.engines.hwp.hwp_cli_engine import HwpCliEngine
 from app.services.job_service import JobService
 
 FRONTEND = Path(__file__).parent / "frontend"
@@ -60,7 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             await service.close()
 
-    app = FastAPI(title="문서잇 PDF → Word", version="0.2.0", lifespan=lifespan,
+    app = FastAPI(title="문서잇 PDF·HWP → Word", version="0.3.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     app.state.jobs = service
     app.state.settings = settings
@@ -93,7 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/health")
     async def health():
-        return {"status": "ok", "api_version": "1", "version": "0.2.0"}
+        return {"status": "ok", "api_version": "1", "version": "0.3.0"}
 
     @app.get("/api/v1/session")
     async def session(request: Request):
@@ -104,7 +105,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/capabilities")
     async def capabilities():
-        return {"formats": {"pdf": Pdf2DocxEngine().probe() | {"ocr": False}},
+        return {"formats": {"pdf": Pdf2DocxEngine().probe() | {"ocr": False},
+                            "hwp": HwpCliEngine().probe() | {"ocr": False}},
                 "limits": {"max_upload_bytes": settings.max_upload_bytes,
                            "max_pages": settings.max_pages, "ttl_seconds": settings.ttl_seconds}}
 
@@ -115,7 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with request.form(max_files=1, max_fields=2, max_part_size=1024) as form:
             files = form.getlist("file")
             if len(files) != 1 or not isinstance(files[0], UploadFile):
-                raise DomainError("INVALID_REQUEST", "PDF 파일을 한 개 선택하세요.")
+                raise DomainError("INVALID_REQUEST", "PDF 또는 HWP 파일을 한 개 선택하세요.")
             if set(form.keys()) - {"file", "mode", "ocr"} or len(form.getlist("mode")) > 1 or len(form.getlist("ocr")) > 1:
                 raise DomainError("INVALID_OPTIONS", "지원하지 않는 요청 필드입니다.")
             result = await service.create(files[0], str(form.get("mode", "balanced")), str(form.get("ocr", "off")))
