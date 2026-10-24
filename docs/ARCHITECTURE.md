@@ -4,6 +4,8 @@
 
 ## 1. 실행 구성
 
+단계 마무리 시 사용자 선호 경로를 별도의 [로컬 PDF→글꼴 포함 DOCX 도구](NATIVE_PDF_WORKFLOW.md)로 정식화했다. 기존 웹앱 dispatcher의 HWP 직접 경로와 구분하며 한글 뷰어 GUI를 서버에서 자동 조작하지 않는다. 최신 구현·검증 상태는 [인수인계](HANDOFF.md)를 따른다.
+
 ```mermaid
 flowchart TD
     UI[Frontend: HTML/CSS/JavaScript] --> API[FastAPI Backend]

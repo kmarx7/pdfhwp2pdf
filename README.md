@@ -13,7 +13,7 @@ Python 3.11을 사용합니다. 시스템 Python이나 다른 프로젝트 환�
 ```bash
 git clone https://github.com/kmarx7/pdfhwp2pdf.git
 cd pdfhwp2pdf
-git switch fix/hwp-layout-fidelity
+git switch feat/native-pdf-docx-workflow
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/install_hwp_engine.py
@@ -38,6 +38,17 @@ Node.js가 있는 환경에서는 `npm run dev`도 동일한 서버를 실행합
 변환된 DOCX에 본문 `w:t`와 실제 Word 표 `w:tbl`이 존재하는지 검사합니다. 원본에서 추출한 문자의 99% 미만이 남거나 중복이 1%를 넘으면 실패시킵니다. 이 검사는 문자 집합 기반의 누락 탐지이며 읽기 순서·실제 CER·시각 유사도를 증명하지 않습니다.
 
 ## 테스트
+
+이번 단계 마무리 상태와 남은 수동 단계는 [인수인계](docs/HANDOFF.md)에 기록했습니다. 사용자 선호 `native-embedded` 경로를 다시 만드는 로컬 도구는 아래 명령을 사용합니다. 웹앱의 HWP 직접 변환과는 별도 경로입니다.
+
+```bash
+# 한글 뷰어에서 원본을 텍스트가 포함된 PDF로 먼저 저장합니다.
+.venv/bin/python scripts/convert_reference_pdf.py /path/to/reference.pdf runtime/results/native-embedded.docx
+# 기본 macOS 글꼴 폴더 이외의 글꼴을 사용할 때 (반복 지정 가능)
+.venv/bin/python scripts/convert_reference_pdf.py /path/to/reference.pdf runtime/results/another.docx --font-dir /path/to/fonts
+```
+
+기본 검색 위치는 설치된 한글 뷰어의 TTF 폴더와 사용자 `~/Library/Fonts`입니다. 글꼴을 새로 설치하지 않으며, 문서에 쓰인 글꼴을 찾지 못하거나 편집용 포함 플래그를 확인할 수 없으면 실패합니다. 글꼴 전체를 포함해 출력이 커질 수 있습니다. 기존 결과는 덮어쓰지 않고 `.quality.json` 보고서를 함께 저장합니다. 실제 페이지 배치 보존을 자동으로 합격 처리하지 않습니다. [로컬 경로 명세](docs/NATIVE_PDF_WORKFLOW.md)
 
 ```bash
 .venv/bin/python -m pytest -q
