@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import sys
 import time
 from uuid import uuid4
@@ -17,6 +18,7 @@ from app.config import PROJECT_ROOT, Settings
 from app.domain.errors import DomainError
 from app.infrastructure.workspace import JobWorkspace, atomic_json, directory_bytes
 from app.services.analyzer import FileTypeDetector
+from app.services.native_references import NativeReferences
 
 TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
 STAGES = {"analyzing", "converting", "postprocessing", "validating"}
@@ -31,6 +33,7 @@ class JobService:
         self.settings = settings
         self.clock = clock
         self.root = settings.workspace
+        self.references = NativeReferences(self.root.parent / "native-references", settings.native_reference_ttl, clock)
         self.jobs: dict[str, dict] = {}
         self.leases: dict[str, int] = {}
         self.queue: asyncio.Queue[str] = asyncio.Queue(settings.queue_size)
@@ -141,9 +144,9 @@ class JobService:
             job["cleanup_error"] = "CLEANUP_FAILED"
         self.persist(job)
 
-    async def create(self, upload, mode: str, ocr: str) -> dict:
-        if mode != "balanced" or ocr != "off":
-            raise DomainError("INVALID_OPTIONS", "현재 균형 모드만 지원하며 OCR은 제공하지 않습니다.")
+    async def create(self, upload, mode: str, ocr: str, reference=None) -> dict:
+        if mode not in {"balanced", "native_embedded"} or ocr != "off":
+            raise DomainError("INVALID_OPTIONS", "지원하지 않는 변환 모드이거나 OCR 요청입니다.")
         # 사용자 파일명은 디스크 경로·다운로드 헤더·메타데이터로 사용하지 않는다.
         extension = Path(upload.filename or "").suffix.lower()
         if extension not in {".pdf", ".hwp"}:
@@ -171,6 +174,36 @@ class JobService:
             if extension != f".{detected}":
                 raise DomainError("FORMAT_MISMATCH", "파일 확장자와 실제 문서 형식이 다릅니다.", 400)
             target.chmod(0o400)
+            if reference is not None and (mode != "native_embedded" or detected != "hwp"):
+                raise DomainError("INVALID_OPTIONS", "기준 PDF는 HWP의 native-embedded 변환에서만 사용합니다.")
+            if mode == "native_embedded":
+                if not any(folder.is_dir() for folder in self.settings.native_font_dirs):
+                    raise DomainError("FONT_NOT_FOUND", "서버에 글꼴 포함 변환에 사용할 로컬 글꼴 폴더가 없습니다.")
+                if detected == "hwp":
+                    reference_path = space.path / "input/reference.pdf"
+                    if reference is not None:
+                        reference_size = 0
+                        with reference_path.open("wb") as stream:
+                            while chunk := await reference.read(64 * 1024):
+                                reference_size += len(chunk)
+                                if reference_size > self.settings.max_upload_bytes:
+                                    raise DomainError("FILE_TOO_LARGE", "기준 PDF는 30 MiB까지 업로드할 수 있습니다.", 413)
+                                stream.write(chunk)
+                        if FileTypeDetector().detect(reference_path) != "pdf":
+                            raise DomainError("FORMAT_MISMATCH", "기준 문서는 PDF여야 합니다.", 400)
+                    else:
+                        cached = self.references.lookup(hashlib.sha256(target.read_bytes()).hexdigest())
+                        if cached is None:
+                            raise DomainError("NATIVE_REFERENCE_REQUIRED", "이 HWP의 원본 출력 PDF가 필요합니다.", 409,
+                                              suggestion="한글 뷰어에서 전체 페이지를 PDF로 저장한 뒤 기준 PDF로 선택하세요. 초안 변환으로 자동 전환하지 않습니다.")
+                        try:
+                            await asyncio.to_thread(shutil.copyfile, cached[0], reference_path)
+                        except OSError as error:
+                            raise DomainError("REFERENCE_INVALID", "등록 PDF를 읽지 못했습니다. 기준 PDF를 직접 선택해 주세요.") from error
+                        if hashlib.sha256(reference_path.read_bytes()).hexdigest() != cached[1]["pdf_sha256"]:
+                            raise DomainError("REFERENCE_INVALID", "등록 PDF 복사본의 무결성을 확인하지 못했습니다.")
+                    reference_path.chmod(0o400)
+                atomic_json(space.path / "work/native-options.json", {"font_dirs": [str(path) for path in self.settings.native_font_dirs]})
             if self.queue.full():
                 raise DomainError("QUEUE_FULL", "변환 대기열이 가득 찼습니다.", 429)
             if directory_bytes(self.root) > self.settings.max_workspace_bytes:
@@ -185,6 +218,8 @@ class JobService:
             return self.public(job)
         finally:
             await upload.close()
+            if reference is not None:
+                await reference.close()
             if not committed:
                 self.jobs.pop(job_id, None)
                 space.discard()
@@ -221,6 +256,10 @@ class JobService:
         return True
 
     async def cleanup(self) -> None:
+        try:
+            self.references.cleanup()
+        except DomainError:
+            pass  # 잘못된 기준 캐시가 독립 PDF 작업의 정리를 막지 않게 한다.
         now = self.clock()
         for job_id, job in list(self.jobs.items()):
             due = job.get("deleted_at") is not None or (job.get("expires_at") is not None and job["expires_at"] <= now)

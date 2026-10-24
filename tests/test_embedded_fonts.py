@@ -12,7 +12,7 @@ from app.postprocess.embedded_fonts import embed_local_fonts, embedding_allowed,
 from scripts.convert_reference_pdf import convert
 
 
-def make_font(path: Path, bold=False, flags=8):
+def make_font(path: Path, bold=False, flags=8, family="Fixture Sans", ps_name="FixtureSans"):
     builder = FontBuilder(1000, isTTF=True)
     builder.setupGlyphOrder([".notdef", "A"])
     builder.setupCharacterMap({65: "A"})
@@ -27,10 +27,10 @@ def make_font(path: Path, bold=False, flags=8):
     builder.setupGlyf(glyphs)
     builder.setupHorizontalMetrics({name: (600, 0) for name in glyphs})
     builder.setupHorizontalHeader(ascent=800, descent=-200)
-    builder.setupNameTable({"familyName": "Fixture Sans", "styleName": "Bold" if bold else "Regular",
+    builder.setupNameTable({"familyName": family, "styleName": "Bold" if bold else "Regular",
                             "uniqueFontIdentifier": "fixture-bold" if bold else "fixture-regular",
-                            "fullName": "Fixture Sans Bold" if bold else "Fixture Sans Regular",
-                            "psName": "FixtureSans-Bold" if bold else "FixtureSans"})
+                            "fullName": family + (" Bold" if bold else " Regular"),
+                            "psName": ps_name + ("-Bold" if bold else "")})
     builder.setupOS2(sTypoAscender=800, sTypoDescender=-200, usWinAscent=800, usWinDescent=200,
                      fsType=flags, fsSelection=32 if bold else 64)
     builder.setupPost()

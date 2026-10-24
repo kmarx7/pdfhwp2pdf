@@ -4,7 +4,13 @@
 
 ## 1. 실행 구성
 
-단계 마무리 시 사용자 선호 경로를 별도의 [로컬 PDF→글꼴 포함 DOCX 도구](NATIVE_PDF_WORKFLOW.md)로 정식화했다. 기존 웹앱 dispatcher의 HWP 직접 경로와 구분하며 한글 뷰어 GUI를 서버에서 자동 조작하지 않는다. 최신 구현·검증 상태는 [인수인계](HANDOFF.md)를 따른다.
+v0.4.0에서 사용자 선호 경로를 웹앱에 연결했다. 최신 구현은 [웹 경로 보고서](NATIVE_WEB_REPORT.md), 이전 CLI 단계는 [인수인계](HANDOFF.md)를 따른다. 한글 뷰어 PDF 출력 자체는 수동이다.
+
+`POST /api/v1/native/jobs` → `JobService.create(native_embedded)` → 격리 worker → `HwpAnalyzer`의 원본 본문과 `DocumentAnalyzer`의 기준 PDF 대조 → `NativeEmbeddedEngine` → `Pdf2DocxEngine` → `DocxPostProcessor` → `embed_local_fonts` → `QualityValidator` 순서다. PDF 입력의 native 모드는 HWP 대조 단계만 생략한다. 기존 HWP 직접 초안 경로는 명시적으로 선택한 `balanced`에서만 사용한다.
+
+`NativeReferences`는 별도 로컬 저장소 `runtime/native-references/<source SHA-256>/reference.pdf`와 `meta.json`을 관리한다. 등록 시 HWP/PDF 분석·본문 문자 포함률 ≥99%·무결성을 확인하고, 조회 시 PDF SHA-256을 확인한다. 전체 256 MiB/개별 30 MiB/24시간 TTL이며 만료는 조회와 시작·60초 정리에서 회수한다. 서버 중지 중 정리는 다음 실행으로 미뤄진다. 입력 HWP는 캐시에 보관하지 않는다. 첨부 PDF는 작업 input에만 복사하고 작업 종료 후 삭제한다. 캐시가 없으면 `NATIVE_REFERENCE_REQUIRED`로 중단하며 다른 경로로 대체하지 않는다.
+
+API는 기존 작업 조회·취소·다운로드·보고서·1시간 결과 TTL을 공유한다. native multipart는 원본과 기준 PDF 두 개만 허용하며 각각 30 MiB, 요청 본문은 합산 상한 +64 KiB를 적용한다. native 글꼴 디렉터리는 서버 설정에서만 전달하고 API 임의 경로를 받지 않는다. 원본 HWP와 기준 PDF 입력 복사본 해시를 변환 전후 대조한다.
 
 ```mermaid
 flowchart TD

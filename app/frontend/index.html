@@ -52,6 +52,15 @@
             <button id="remove-file" class="icon-button" type="button" aria-label="선택 파일 지우기">×</button>
           </div>
 
+          <div id="reference-panel" class="reference-panel" hidden>
+            <strong>한글에서 출력한 기준 PDF</strong>
+            <p id="reference-status" role="status">같은 HWP의 전체 페이지를 한글 뷰어에서 PDF로 저장해 선택하세요. 등록된 PDF가 있으면 자동으로 사용합니다.</p>
+            <input id="reference-input" type="file" accept=".pdf,application/pdf" aria-label="기준 PDF 선택" hidden>
+            <button id="reference-choose" class="button button-secondary" type="button">기준 PDF 선택</button>
+            <span id="reference-name"></span>
+            <button id="reference-remove" class="text-button" type="button" hidden>PDF 선택 취소</button>
+          </div>
+
           <div id="status-panel" class="status-panel" role="status" aria-live="polite" aria-atomic="true" hidden>
             <div class="status-heading"><span id="status-icon" class="status-icon" aria-hidden="true"></span><div><h3 id="status-title"></h3><p id="status-description"></p></div></div>
             <ol id="stage-list" class="stage-list" aria-label="변환 단계"><li data-stage="analyzing">분석</li><li data-stage="converting">변환</li><li data-stage="postprocessing">서식 정리</li><li data-stage="validating">검증</li></ol>
@@ -71,7 +80,8 @@
           <div class="section-heading"><span class="step-number">02</span><h2 id="settings-title">변환 설정</h2></div>
           <div id="format-flow" class="format-flow" aria-label="PDF에서 DOCX로 변환"><div><span id="source-format" class="format-label pdf-label">PDF</span><span>원본 문서</span></div><svg viewBox="0 0 32 20" aria-hidden="true"><path d="M2 10h26m-6-6 6 6-6 6"/></svg><div><span class="format-label word-label">DOCX</span><span>편집 가능한 Word</span></div></div>
           <div class="mode-heading"><h3>변환 모드</h3><span>기본 모드</span></div>
-          <label class="mode-option"><input type="radio" name="mode" value="balanced" checked><span><strong id="mode-title">균형 있게 변환</strong><small id="mode-description">문단과 표의 구조, 원본 배치를 함께 고려해요.</small></span><span class="selected-dot" aria-hidden="true"></span></label>
+          <label id="native-mode-option" class="mode-option" hidden><input id="native-mode" type="radio" name="mode" value="native_embedded"><span><strong>원본 PDF 기준 · 글꼴 포함 <span class="mode-recommended">권장</span></strong><small>native-embedded 경로로 본문·표를 변환하고 글꼴을 포함해요.</small></span><span class="selected-dot" aria-hidden="true"></span></label>
+          <label class="mode-option"><input id="balanced-mode" type="radio" name="mode" value="balanced" checked><span><strong id="mode-title">균형 있게 변환</strong><small id="mode-description">문단과 표의 구조, 원본 배치를 함께 고려해요.</small></span><span class="selected-dot" aria-hidden="true"></span></label>
           <div class="conversion-notes"><h3>변환 전 확인해 주세요</h3><ul id="conversion-notes"><li>텍스트 기반 PDF를 지원해요.</li><li>스캔 PDF와 암호화된 PDF는 지원하지 않아요.</li><li>복잡한 표와 다단 편집은 결과 확인이 필요해요.</li></ul></div>
           <button id="convert-button" class="button button-primary convert-button" type="button" disabled>Word로 변환하기 <span aria-hidden="true">→</span></button>
           <button id="cancel-button" class="text-button cancel-button" type="button" hidden>작업 취소 및 파일 삭제</button>

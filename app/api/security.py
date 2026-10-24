@@ -28,7 +28,7 @@ class LocalSecurityMiddleware:
             if origin and origin != expected:
                 response = JSONResponse({"error": {"code": "INVALID_ORIGIN", "message": "같은 웹페이지에서 요청하세요."}}, 403)
                 return await response(scope, receive, send)
-        limit = self.settings.max_upload_bytes + 64 * 1024
+        limit = self.settings.max_upload_bytes * (2 if scope["path"] == "/api/v1/native/jobs" else 1) + 64 * 1024
         try:
             declared = int(headers.get(b"content-length", b"0"))
         except ValueError:

@@ -164,6 +164,7 @@ h1>span {
   scroll-margin-top:20px;
 }
 .workspace {
+  min-width:0;
   padding:28px 32px 0;
 }
 .section-heading {
@@ -328,6 +329,7 @@ h1>span {
   color:#789b86;
 }
 .settings-panel {
+  min-width:0;
   background:#fbfcfb;
   border-left:1px solid var(--line);
   padding:28px;
@@ -523,6 +525,7 @@ h1>span {
 }
 .file-details {
   display:flex;
+  flex:1;
   flex-direction:column;
   min-width:0;
   gap:3px;
@@ -539,6 +542,7 @@ h1>span {
   color:#89968d;
 }
 .icon-button {
+  flex-shrink:0;
   margin-left:auto;
   background:none;
   border:0;
@@ -656,6 +660,13 @@ h1>span {
   flex-wrap:wrap;
   margin-top:19px;
 }
+.reference-panel {margin-top:18px;padding:18px;border:1px solid var(--line);border-radius:12px;background:#f6faf7;font-size:13px;line-height:1.7;}
+.reference-panel p {margin:8px 0 12px;color:#60766b;}
+#reference-name {display:block;overflow-wrap:anywhere;margin-top:8px;}
+.mode-option + .mode-option {margin-top:10px;}
+.mode-option:has(input:not(:checked)) {background:#fff;border-color:var(--line);}
+.mode-option:has(input:not(:checked)) .selected-dot {opacity:0;}
+.mode-recommended {font-size:11px;margin-left:4px;color:#15715b;}
 .result-actions .button {
   padding:12px 16px;
 }
@@ -924,7 +935,7 @@ h1>span {
     display:none;
   }
   .converter-card {
-    grid-template-columns:1fr;
+    grid-template-columns:minmax(0,1fr);
     border-radius:15px;
   }
   .workspace {

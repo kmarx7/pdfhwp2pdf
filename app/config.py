@@ -17,3 +17,7 @@ class Settings:
     max_memory_bytes: int = 1024 * 1024 * 1024
     max_workspace_bytes: int = 1024 * 1024 * 1024
     allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "[::1]")
+    native_font_dirs: tuple[Path, ...] = field(default_factory=lambda: (
+        Path("/Applications/Hancom Office HWP Viewer.app/Contents/Resources/Hnc/Shared/TTF/Install"),
+        Path.home() / "Library/Fonts"))
+    native_reference_ttl: float = 86400

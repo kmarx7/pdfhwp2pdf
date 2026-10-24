@@ -62,7 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             await service.close()
 
-    app = FastAPI(title="문서잇 PDF·HWP → Word", version="0.3.0", lifespan=lifespan,
+    app = FastAPI(title="문서잇 PDF·HWP → Word", version="0.4.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     app.state.jobs = service
     app.state.settings = settings
@@ -95,7 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/health")
     async def health():
-        return {"status": "ok", "api_version": "1", "version": "0.3.0"}
+        return {"status": "ok", "api_version": "1", "version": "0.4.0"}
 
     @app.get("/api/v1/session")
     async def session(request: Request):
@@ -110,7 +110,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             "hwp": HwpCliEngine().probe() | {"ocr": False}},
                 "limits": {"max_upload_bytes": settings.max_upload_bytes,
                            "max_pages": settings.max_pages, "ttl_seconds": settings.ttl_seconds},
-                "desktop": {"open_downloads_folder": can_open_downloads()}}
+                "desktop": {"open_downloads_folder": can_open_downloads()},
+                "native_embedded": {"available": any(folder.is_dir() for folder in settings.native_font_dirs),
+                                    "requires_reference_pdf_for_hwp": True, "reference_cache_ttl": settings.native_reference_ttl}}
+
+    @app.get("/api/v1/native/references/{digest}")
+    async def native_reference_status(digest: str):
+        cached = service.references.lookup(digest)
+        return {"available": cached is not None, "pages": cached[1]["pages"] if cached else None,
+                "expires_at": cached[1]["expires_at"] if cached else None}
+
+    @app.post("/api/v1/native/jobs", status_code=202)
+    async def create_native_job(request: Request):
+        check_csrf(request)
+        async with request.form(max_files=2, max_fields=0, max_part_size=1024) as form:
+            files, references = form.getlist("file"), form.getlist("reference")
+            if len(files) != 1 or not isinstance(files[0], UploadFile) or len(references) > 1 or any(not isinstance(item, UploadFile) for item in references) or set(form) - {"file", "reference"}:
+                raise DomainError("INVALID_REQUEST", "원본 파일 한 개와 선택한 기준 PDF 한 개만 전송하세요.")
+            result = await service.create(files[0], "native_embedded", "off", references[0] if references else None)
+            return JSONResponse(result, 202, headers={"Location": result["links"]["self"]})
 
     @app.post("/api/v1/desktop/open-downloads")
     async def open_downloads(request: Request):

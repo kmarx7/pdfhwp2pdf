@@ -4,7 +4,11 @@
 
 ## 1. 형식별 실현 가능성
 
-사용자 선호 native-embedded 경로는 [별도 CLI 명세](NATIVE_PDF_WORKFLOW.md)로 재현 가능하게 정리했다. HWP 자체 입력 지원을 확장했다고 표시하지 않으며 한글 뷰어에서 PDF로 저장한 파일을 입력받는다.
+사용자 선호 native-embedded 경로는 [CLI 명세](NATIVE_PDF_WORKFLOW.md) 이후 [웹 연결](NATIVE_WEB_REPORT.md)을 추가했다. 웹 HWP 기본 모드는 `native_embedded`, 엔진 ID는 `native-pdf-embedded`다. HWP와 같은 문서의 한글 출력 PDF를 함께 받거나 HWP 해시에 결합한 등록 PDF를 사용한다. 한글 PDF 출력 자동화나 HWP 파서 지원 범위 확대를 주장하지 않는다. 기존 HWP 분석기의 보호·미지원 요소 검사를 유지한다.
+
+원본 HWP→기준 PDF의 정규화 문자 다중집합 포함률 ≥99%를 확인하고 기준 PDF 전체 페이지를 변환한다. 결과 DOCX→기준 PDF 검사에는 기존 문자 누락 ≥99%/중복 ≤1%·텍스트 개체·표 존재 검사를 적용한다. 글꼴 포함은 로컬 전체 글꼴과 편집 허용 OS/2 플래그 정책을 유지한다. 글꼴 미발견·권한 거부·참조 불일치 때 실패하며 초안으로 자동 전환하지 않는다. 문자의 포함률은 읽기 순서나 문단/시각 품질을 증명하지 않으며, 모든 이미지·도형의 일치 검사는 아직 없다.
+
+품질 JSON에 `route=native_reference_pdf_to_docx_with_fonts`, `embedded_fonts`, HWP의 `hwp_reference_text_coverage`·`reference_pdf_page_count`·`reference_pdf_sha256`을 추가한다. HWP `source_page_count`는 미측정이고 기준 PDF 쪽 수와 분리한다. 원본/기준 PDF 내용을 보고서에 넣지 않는다. 동일 문서가 재변환되어도 GUID·메타데이터로 파일 해시가 달라질 수 있어 본문 XML·역난독화 글꼴 데이터를 기준 후보와 비교한다.
 
 후속 실제 Word 검토에서 HWP의 레이아웃 보존 품질 미달을 확인했다. 현재 직접 경로는 편집용 초안이며, 빈 문단·쪽 나눔 등의 부분 복원과 별개로 시각 품질 관문은 미완료다. [Word 검토 보고서](HWP_LAYOUT_REVIEW.md)를 현재 품질 판단의 기준으로 한다.
 
@@ -105,7 +109,7 @@ ONLYOFFICE에서 문서로 확인한 것은 HWP/HWPX→DOCX 변환 경로다. �
 - PDF의 여백은 일반적으로 추론값이다. 원본 section 정보가 있는 HWPX와 구분한다. 같은 크기 페이지마다 section을 불필요하게 늘리지 않되 원본의 강제 나눔은 보존한다.
 - 원본 이미지 바이트를 재사용하고 불필요한 리샘플링을 피한다. 클리핑·마스크·벡터 그림은 추가 처리와 경고가 필요하다. 그림만 부분 래스터화할 수 있으나 본문·표를 페이지 이미지로 대체하지 않는다.
 - python-docx의 공식 고수준 그림 지원은 인라인 중심이다. 부유 이미지·감싸기·정밀 앵커는 별도 OOXML 매핑과 Word 렌더링 검증 없이는 지원으로 선언하지 않는다. [공식 그림 문서](https://python-docx.readthedocs.io/en/latest/user/shapes.html)
-- 글꼴 파일을 자동 추출·재배포·임베딩하지 않는다. 사용 가능한 대체 글꼴은 OS·라이선스·문자 범위를 확인한 설정표로 관리하고 원본/대체 이름을 경고한다. 화면상 유사함과 원본 글꼴 일치를 다른 지표로 측정한다.
+- 기본 `balanced`에서는 글꼴을 자동 추출·임베딩하지 않는다. 후속 `native_embedded`는 사용자가 요청한 로컬 글꼴 포함 경로이며 설치된 전체 글꼴의 OS/2 편집 허용 플래그를 확인하고 포함한다. PDF subset 글꼴을 추출해 대체하지 않으며, 파일 미발견·허용 불명확/거부는 실패한다. 이 기술적 검사를 모든 글꼴의 별도 계약 확인으로 간주하지 않는다. 사용 가능한 대체 글꼴은 OS·라이선스·문자 범위를 확인한 설정표로 관리하고 원본/대체 이름을 경고한다. 화면상 유사함과 원본 글꼴 일치를 다른 지표로 측정한다.
 - OCR 후보는 로컬 Tesseract `kor+eng`. 텍스트·bbox·confidence를 공통 모델로 넘기고 스캔 페이지를 Word 배경 이미지로 삽입하지 않는다. 사진은 남길 수 있다. OCR에서 원래 글꼴·크기·굵기와 표 구조가 자동 복원된다고 보장하지 않는다. [설치 문서](https://tesseract-ocr.github.io/tessdoc/Installation.html), [언어 데이터](https://tesseract-ocr.github.io/tessdoc/Data-Files-in-different-versions.html)
 
 ## 7. 품질 평가 설계

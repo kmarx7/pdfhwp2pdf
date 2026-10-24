@@ -3,11 +3,12 @@ from app.domain.models import ConversionOptions, DocumentAnalysis
 from app.engines.base import ConversionEngine
 from app.engines.pdf.pdf2docx_engine import Pdf2DocxEngine
 from app.engines.hwp.hwp_cli_engine import HwpCliEngine
+from app.engines.pdf.native_embedded_engine import NativeEmbeddedEngine
 
 
 class EngineRegistry:
     def __init__(self):
-        self.engines: list[ConversionEngine] = [Pdf2DocxEngine(), HwpCliEngine()]
+        self.engines: list[ConversionEngine] = [Pdf2DocxEngine(), HwpCliEngine(), NativeEmbeddedEngine()]
 
     def probe(self) -> list[dict]:
         return [engine.probe() for engine in self.engines]

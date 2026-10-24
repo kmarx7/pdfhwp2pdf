@@ -32,33 +32,68 @@ def run(workspace: Path, max_pages: int, emit) -> None:
     from app.postprocess.docx import DocxPostProcessor
     from app.quality.validator import QualityValidator
 
-    sources = list((workspace / "input").iterdir())
-    if len(sources) != 1 or sources[0].suffix not in {".pdf", ".hwp"}:
+    mode = json.loads((workspace / "meta.json").read_text()).get("mode", "balanced")
+    options = ConversionOptions(mode=mode)
+    inputs = list((workspace / "input").iterdir())
+    sources = [path for path in inputs if path.name in {"source.pdf", "source.hwp"}]
+    if len(sources) != 1:
         raise DomainError("INVALID_DOCUMENT", "작업 입력 파일을 확인하지 못했습니다.", 400)
     source = sources[0]
+    expected = {source.name}
+    if mode == "native_embedded" and source.suffix == ".hwp":
+        expected.add("reference.pdf")
+    if {path.name for path in inputs} != expected or any(path.is_symlink() or not path.is_file() for path in inputs):
+        raise DomainError("INVALID_DOCUMENT", "작업 입력 구성이나 경로가 올바르지 않습니다.", 400)
     before = hashlib.sha256(source.read_bytes()).hexdigest()
     emit({"stage": "analyzing"})
-    if source.suffix == ".hwp":
+    reference_hash = None
+    reference_coverage = None
+    conversion_source = source
+    if mode == "native_embedded":
+        if source.suffix == ".hwp":
+            from app.services.hwp_analyzer import HwpAnalyzer
+            from app.services.native_validation import validate_reference_text
+            original = HwpAnalyzer().analyze(source, workspace / "work", emit)
+            conversion_source = workspace / "input/reference.pdf"
+            analysis = DocumentAnalyzer().analyze(conversion_source, max_pages)
+            reference_coverage = validate_reference_text(original, analysis)
+            reference_hash = hashlib.sha256(conversion_source.read_bytes()).hexdigest()
+        else:
+            analysis = DocumentAnalyzer().analyze(source, max_pages)
+        settings = json.loads((workspace / "work/native-options.json").read_text())
+        analysis.engine_data["native_font_dirs"] = settings["font_dirs"]
+    elif source.suffix == ".hwp":
         from app.services.hwp_analyzer import HwpAnalyzer
         analysis = HwpAnalyzer().analyze(source, workspace / "work", emit)
     else:
         analysis = DocumentAnalyzer().analyze(source, max_pages)
     emit({"stage": "converting", "pages": analysis.pages, "warnings": analysis.warnings})
-    engine = ConversionDispatcher().select(analysis, ConversionOptions())
-    result = engine.convert(source, analysis, ConversionOptions(), workspace / "work", emit)
+    engine = ConversionDispatcher().select(analysis, options)
+    result = engine.convert(conversion_source, analysis, options, workspace / "work", emit)
     emit({"stage": "postprocessing"})
     if analysis.format == "hwp":
         from app.postprocess.hwp import HwpDocxPostProcessor
         HwpDocxPostProcessor().process(result.docx_path, analysis)
-    DocxPostProcessor().process(result.docx_path)
+    if mode != "native_embedded":
+        DocxPostProcessor().process(result.docx_path)
     emit({"stage": "validating"})
     quality = QualityValidator().validate(result.docx_path, analysis)
+    if mode == "native_embedded":
+        quality["route"] = "native_reference_pdf_to_docx_with_fonts"
+        quality["embedded_fonts"] = analysis.engine_data["embedded_fonts"]
+        if reference_hash:
+            if hashlib.sha256(conversion_source.read_bytes()).hexdigest() != reference_hash:
+                raise DomainError("VALIDATION_FAILED", "기준 PDF 무결성 확인에 실패했습니다.")
+            quality["reference_pdf_sha256"] = reference_hash
+            quality["metrics"]["hwp_reference_text_coverage"] = {"status": "measured", "value": reference_coverage, "method": "normalized_character_multiset"}
+            quality["metrics"]["reference_pdf_page_count"] = {"status": "measured", "value": analysis.pages}
+            quality["metrics"]["source_page_count"] = {"status": "not_measured", "value": None}
     if hashlib.sha256(source.read_bytes()).hexdigest() != before:
         raise DomainError("VALIDATION_FAILED", "입력 복사본의 무결성 확인에 실패했습니다.")
     quality["engine"] = {"id": result.engine_id, "version": result.version}
     quality["input_sha256"] = before
     quality["fonts"] = analysis.fonts
-    quality["source_format"] = analysis.format
+    quality["source_format"] = source.suffix[1:]
     quality["platform"] = {"python": sys.version.split()[0], "system": sys.platform}
     output = workspace / "output/result.docx"
     result.docx_path.replace(output)

@@ -42,6 +42,8 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 
 ## 검증과 인계
 
+- 최신 상태는 `docs/NATIVE_WEB_REPORT.md`다. `feat/native-web-conversion` v0.4.0에서 HWP UI 기본을 `native_embedded`로 연결했다. 기준 PDF는 HWP SHA-256별 등록본 또는 사용자 첨부본이며 수동 한글 PDF 출력은 여전히 필요하다. 현재 사용자 문서는 등록본을 사용한다. 기준 PDF 미등록·본문 불충분·글꼴 미발견 때 직접 초안으로 조용히 전환하지 않는다. 아래 CLI만 제공한다는 기록은 이전 단계 이력이다.
+
 - `docs/HWP_LAYOUT_REVIEW.md`의 실제 Word 검토를 우선한다. 사용자 원본 16쪽 대비 기존 DOCX 8쪽으로 품질 미달이 확인됐다. `fix/hwp-layout-fidelity`는 레이아웃 힌트의 부분 복원이며 원본 레이아웃 보존 완료가 아니다. UI에서 HWP를 편집용 초안으로 설명한다. 구조 테스트 85개 통과를 시각 품질 합격으로 보고하지 않는다.
 - 후속 사용자 평가는 `native-embedded` 후보가 원본과 비슷하게 잘 나왔다는 것이다. 후속 개선은 이 한글 뷰어 PDF 경유 + 글꼴 포함 후보를 기준으로 우선한다. 현재 Word 18쪽/원본 16쪽, 약 52MB이며 앱의 자동 HWP 경로에는 아직 연결되지 않았다. 사용자의 긍정 평가를 전체 후보 일괄 실패라는 이전 판단으로 덮어쓰지 않는다.
 - 2026-10-25 단계 마무리 상태는 `docs/HANDOFF.md`를 우선 확인한다. `feat/native-pdf-docx-workflow`에서 선호 경로를 `scripts/convert_reference_pdf.py`와 로컬 글꼴 포함 모듈로 정식화했다. 전체 97개 테스트 통과, 실제 기준 후보와 본문 XML·글꼴 연결 데이터 동일함을 확인했다. PDF 출력은 수동, 후속 처리는 CLI이며 웹앱 자동 HWP 경로는 아니다. 글꼴 플래그 거부와 기존 출력/원본 보존을 유지한다.
