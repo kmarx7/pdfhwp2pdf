@@ -96,6 +96,18 @@ def make_test_hwps(folder: Path) -> dict[str, Path]:
         model_path.write_text(json.dumps(model, ensure_ascii=False))
         cli.run(["new", "--from", str(model_path), "-o", str(colored)], work)
         results["colored"] = colored
+        decorated = folder / "decorated.hwp"
+        if decorated.exists():
+            raise FileExistsError(f"Fixture already exists: {decorated.name}")
+        fill.update(fill_type=4, bg_color=None,
+                    gradient={"angle_deg": 0.0, "center_x": 50, "center_y": 50, "radial": False,
+                              "step": 50, "stops": [[0.0, 0xFFFFFF], [1.0, 0xF7E6DF]]},
+                    tail=(struct.pack("<B5i2I", 1, 0, 50, 50, 50, 2, 0xFFFFFF, 0xF7E6DF) + bytes.fromhex("010000003200")).hex())
+        fill["sides"][0]["line_type"] = 3
+        fill["sides"][2]["line_type"] = 8
+        model_path.write_text(json.dumps(model, ensure_ascii=False))
+        cli.run(["new", "--from", str(model_path), "-o", str(decorated)], work)
+        results["decorated"] = decorated
         for name, source_name in (("page_numbers", "text"), ("roman_numbers", "text"),
                                   ("section_numbers", "sections"), ("inherited_numbers", "sections")):
             target = folder / f"{name}.hwp"

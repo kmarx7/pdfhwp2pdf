@@ -1,5 +1,5 @@
 """기존 DOCX 텍스트·셀을 유지하면서 HWP 표의 열 치수와 기본 테두리/배경을 복원한다."""
-from collections import deque
+import heapq
 from pathlib import Path
 
 from docx import Document
@@ -9,6 +9,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from app.domain.errors import DomainError
 from app.domain.models import DocumentAnalysis
+from app.postprocess.hwp_fills import colorref, resolve_fill
+
+BORDER_TYPES = {0: "nil", 1: "single", 3: "dotted", 8: "double"}
 
 
 def column_widths(table: dict) -> list[int]:
@@ -21,16 +24,25 @@ def column_widths(table: dict) -> list[int]:
         graph[start].append((end, width))
         graph[end].append((start, -width))
     boundaries = {0: 0}
-    queue = deque([0])
+    costs = {0: 0}
+    queue = [(0, 0)]
     while queue:
-        start = queue.popleft()
+        cost, start = heapq.heappop(queue)
+        if cost != costs[start]:
+            continue
         for end, distance in graph[start]:
             position = boundaries[start] + distance
-            if end not in boundaries:
+            # 병합 셀의 전체 너비보다 개별 열 셀의 치수를 우선한다.
+            candidate_cost = cost + abs(end - start) ** 2
+            if candidate_cost < costs.get(end, float("inf")):
                 boundaries[end] = position
-                queue.append(end)
-            elif abs(boundaries[end] - position) > 10:
-                raise DomainError("UNSUPPORTED_FEATURE", "HWP 표의 열 치수가 일관되지 않아 변환을 중단했습니다.")
+                costs[end] = candidate_cost
+                heapq.heappush(queue, (candidate_cost, end))
+    error = max(abs(boundaries[end] - boundaries[start] - width)
+                for start, edges in enumerate(graph) for end, width in edges if start in boundaries and end in boundaries)
+    if error > 300:
+        raise DomainError("UNSUPPORTED_FEATURE", "HWP 표의 열 치수 차이가 3pt를 넘어 변환을 중단했습니다.")
+    table["width_adjustment_hu"] = error
     if count not in boundaries:
         raise DomainError("UNSUPPORTED_FEATURE", "HWP 표 전체 너비를 확인할 수 없습니다.")
     # 모든 행에서 병합된 경계는 실제 선이 없다. 알려진 양 끝 치수 사이만 분할한다.
@@ -42,10 +54,6 @@ def column_widths(table: dict) -> list[int]:
     if min(widths) <= 0:
         raise DomainError("UNSUPPORTED_FEATURE", "HWP 표 열 너비가 올바르지 않습니다.")
     return widths
-
-
-def colorref(value: int) -> str:
-    return f"{value & 255:02X}{(value >> 8) & 255:02X}{(value >> 16) & 255:02X}"
 
 
 def replace_property(parent, name: str, attributes: dict, before: str | None = None):
@@ -104,6 +112,9 @@ class HwpDocxPostProcessor:
                         self.cell_format(cell_properties, original, fills, row_index)
                     column += colspan
         self.page_numbers(document, analysis)
+        adjusted = [table["width_adjustment_hu"] for table in sources if table["width_adjustment_hu"] > 10]
+        if adjusted:
+            analysis.warnings.append(f"서식 변경: {len(adjusted)}개 표에서 행별 너비 차이를 Word 열 기준으로 정규화했습니다. 최대 조정 {max(adjusted) / 100:.2f}pt이며 원본과 열 너비를 비교해 주세요.")
         document.save(path)
 
     @staticmethod
@@ -144,26 +155,27 @@ class HwpDocxPostProcessor:
         if not 0 <= index < len(fills):
             raise DomainError("UNSUPPORTED_FEATURE", "HWP 표의 테두리/배경 참조가 올바르지 않습니다.")
         fill = fills[index]
-        if fill.get("fill_type", 0) not in (0, 1):
-            raise DomainError("UNSUPPORTED_FEATURE", "그라데이션·그림 채우기 표 배경은 아직 지원하지 않습니다.")
+        style = resolve_fill(fill)
         thickness = [0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 1, 1.5, 2, 3, 4, 5]
         borders = OxmlElement("w:tcBorders")
         sides = dict(zip(("left", "right", "top", "bottom"), fill["sides"]))
         for name in ("top", "left", "bottom", "right"):
             side = sides[name]
-            if side["line_type"] not in (0, 1):
-                raise DomainError("UNSUPPORTED_FEATURE", "현재 단일 실선/선 없음 표 테두리만 보존합니다.")
+            if side["line_type"] not in BORDER_TYPES:
+                raise DomainError("UNSUPPORTED_FEATURE", "현재 선 없음·실선·점선·이중선 표 테두리를 지원합니다.")
             continuing = (name == "top" and row > cell["row"]) or (name == "bottom" and row < cell["row"] + cell["row_span"] - 1)
             border = OxmlElement("w:" + name)
-            border.set(qn("w:val"), "nil" if not side["line_type"] or continuing else "single")
+            border.set(qn("w:val"), "nil" if continuing else BORDER_TYPES[side["line_type"]])
             border.set(qn("w:color"), colorref(side["color"]))
             border.set(qn("w:sz"), str(max(2, round(thickness[min(side["width"], 15)] * 72 / 25.4 * 8))))
             borders.append(border)
         for existing in properties.findall(qn("w:tcBorders")):
             properties.remove(existing)
         properties.append(borders)
-        if fill.get("bg_color") is not None:
-            replace_property(properties, "w:shd", {"w:val": "clear", "w:color": "auto", "w:fill": colorref(fill["bg_color"])})
+        for existing in properties.findall(qn("w:shd")):
+            properties.remove(existing)
+        if style["background"] is not None:
+            replace_property(properties, "w:shd", {"w:val": "clear", "w:color": "auto", "w:fill": style["background"]})
         margins = replace_property(properties, "w:tcMar", {})
         values = dict(zip(("left", "right", "top", "bottom"), cell["margins"]))
         for name in ("top", "left", "bottom", "right"):

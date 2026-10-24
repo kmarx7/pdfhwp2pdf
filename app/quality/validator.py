@@ -9,6 +9,8 @@ from docx import Document
 
 from app.domain.errors import DomainError
 from app.domain.models import DocumentAnalysis
+from app.postprocess.hwp_fills import resolve_fill, colorref
+from app.postprocess.hwp import BORDER_TYPES
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
@@ -57,7 +59,7 @@ class QualityValidator:
                     "editable_text": {"status": "measured", "value": True, "method": "ooxml_text_nodes"},
                     "character_coverage": {"status": "measured", "value": round(coverage, 5),
                                            "method": "normalized_character_multiset", "reading_order_verified": False},
-                    "word_table_count": {"status": "measured", "value": len(document.tables)},
+                    "word_table_count": {"status": "measured", "value": len(root.findall(f".//{W}tbl"))},
                     "source_page_count": {"status": "measured" if analysis.pages is not None else "not_measured",
                                           "value": analysis.pages},
                     "cer": {"status": "not_measured", "value": None, "reason": "ground_truth_missing"},
@@ -87,11 +89,26 @@ class QualityValidator:
                        for column, width in zip(grid, expected["column_widths"])):
                     raise ValueError("HWP column widths changed")
             cells, active = [], {}
+            originals = {(row, cell["col"]): cell for cell in expected["cells"]
+                         for row in range(cell["row"], cell["row"] + cell["row_span"])}
             for row_index, row in enumerate(rows):
                 column = 0
                 for cell in row.findall(f"{W}tc"):
                     span = cell.find(f"{W}tcPr/{W}gridSpan")
                     width = int(span.get(f"{W}val")) if span is not None else 1
+                    if "column_widths" in expected:
+                        original = originals[(row_index, column)]
+                        fill = analysis.engine_data["border_fills"][original["border_fill"] - 1]
+                        shading = cell.find(f"{W}tcPr/{W}shd")
+                        background = resolve_fill(fill)["background"]
+                        if (shading.get(f"{W}fill") if shading is not None else None) != background:
+                            raise ValueError("HWP cell background changed")
+                        for name, side in zip(("left", "right", "top", "bottom"), fill["sides"]):
+                            border = cell.find(f"{W}tcPr/{W}tcBorders/{W}{name}")
+                            continuing = (name == "top" and row_index > original["row"]) or (name == "bottom" and row_index < original["row"] + original["row_span"] - 1)
+                            style = "nil" if continuing else BORDER_TYPES[side["line_type"]]
+                            if border is None or border.get(f"{W}val") != style or border.get(f"{W}color") != colorref(side["color"]):
+                                raise ValueError("HWP cell border changed")
                     merge = cell.find(f"{W}tcPr/{W}vMerge")
                     if merge is not None and merge.get(f"{W}val") != "restart":
                         if column not in active:

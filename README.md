@@ -11,7 +11,7 @@ Python 3.11을 사용합니다. 시스템 Python이나 다른 프로젝트 환�
 ```bash
 git clone https://github.com/kmarx7/pdfhwp2pdf.git
 cd pdfhwp2pdf
-git switch feat/open-downloads-folder
+git switch fix/hwp-table-fills
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/install_hwp_engine.py
@@ -64,15 +64,19 @@ node --check app/frontend/static/app.js
 .venv/bin/python scripts/install_hwp_engine.py
 # 네트워크 제한 환경에서 공식 배포물을 미리 받은 경우
 .venv/bin/python scripts/install_hwp_engine.py --archive /path/to/hwp-v1.3.1-aarch64-apple-darwin.tar.gz
-# 직접 시험할 합성 HWP 14개 생성 (기존 파일 덮어쓰기 없음)
+# 직접 시험할 합성 HWP 15개 생성 (기존 파일 덮어쓰기 없음)
 .venv/bin/python scripts/make_test_hwps.py --output-dir runtime/my-hwp-samples
 ```
 
 지원: 본문 텍스트·기본 글꼴/크기/색상, 일반 표와 가로/세로 셀 병합, 열 너비, 실선/선 없음 테두리·단색 셀 배경·셀 여백, 원본 이미지 바이트와 인라인 이미지, 섹션 페이지 크기. 텍스트·표·이미지 누락 및 표 구조/치수 검사를 통과한 결과만 다운로드합니다.
 
+후속 표 서식 보완: 점선·이중선 테두리를 지원합니다. 두 색상의 선형 그라데이션은 중간색 단색으로 **근사**하고 화면·품질 보고서에 서식 손실 경고를 표시합니다. 그라데이션 자체를 보존하는 기능은 아닙니다. 행별 열 치수 불일치는 3pt 이내에서 개별 열 셀을 우선해 정규화하고, 0.1pt를 넘는 조정을 경고합니다. 더 큰 불일치는 계속 거부합니다. 원본 한 건의 실제 변환 결과와 82개 테스트 증거는 [표 서식 보완 보고서](docs/HWP_TABLE_REPORT.md)를 참고하세요.
+
 쪽 번호: 구역 시작의 위·아래 왼쪽/가운데/오른쪽 배치, 아라비아·로마·영문 번호와 앞뒤 장식 문자를 Word의 자동 `PAGE` 필드로 옮깁니다. 문서 시작 번호와 구역 간 설정 유지/해제를 반영합니다. Word에서 필드를 업데이트한 뒤 확인하세요. 번호 결과 캐시는 넣지 않으므로 필드를 계산하지 않는 미리보기에서는 번호가 비어 보일 수 있습니다. 실제 Word의 번호 표시·페이지 나눔·글꼴은 미검증입니다.
 
 현재 거부: HWP 3.x, 암호·배포용·DRM 등 보호 플래그, 머리말·꼬리말·수식·도형·다단·필드·각주 등 미지원 control, 알 수 없는 본문 레코드, 복잡한 표 배경·테두리, 확인할 수 없는 이미지 참조. `--strict`만으로 DOCX 손실을 검사할 수 없어 자체 분석·후처리·검증을 추가했습니다.
+
+표 배경 중 그림·무늬·복합 채우기, 방사형/다중 색상 그라데이션은 계속 거부합니다. 점선·이중선 이외의 추가 선 모양도 아직 지원하지 않습니다.
 
 쪽 번호도 안쪽·바깥쪽 교대 배치, 본문 중간에서 설정 변경, 표 안 설정, 번호 감추기·재시작 컨트롤, 원문자 등 미지원 숫자 모양은 계속 거부합니다. 위의 머리말·꼬리말 미지원은 원본의 일반 머리말·꼬리말 컨트롤을 뜻하며, 지원하는 쪽 번호를 배치하기 위한 DOCX 머리말·꼬리말 생성과 구분합니다.
 

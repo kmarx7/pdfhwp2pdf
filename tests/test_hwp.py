@@ -15,7 +15,8 @@ from app.domain.models import ConversionOptions
 from app.engines.hwp.cli import HwpCli
 from app.engines.hwp.hwp_cli_engine import HwpCliEngine
 from app.postprocess.docx import DocxPostProcessor
-from app.postprocess.hwp import HwpDocxPostProcessor
+from app.postprocess.hwp import HwpDocxPostProcessor, column_widths
+from app.postprocess.hwp_fills import resolve_fill
 from app.quality.validator import QualityValidator, normalized
 from app.services.hwp_analyzer import HwpAnalyzer, guard_hwp_container
 from app.services.hwp_page_numbers import parse_page_number
@@ -268,3 +269,55 @@ def test_hwp_missing_page_number_field_is_rejected(hwp_samples, tmp_path):
     with pytest.raises(DomainError) as error:
         QualityValidator().validate(result.docx_path, analysis)
     assert error.value.code == "VALIDATION_FAILED"
+
+
+def test_hwp_gradient_approximation_and_dotted_double_borders(client, hwp_samples):
+    job = wait_job(client, submit(client, hwp_samples["decorated"]).json()["job_id"])
+    assert job["state"] == "succeeded", job
+    assert any("그라데이션 효과는 보존되지 않았습니다" in warning for warning in job["warnings"])
+    doc = Document(BytesIO(client.get(job["links"]["download"]).content))
+    properties = doc.tables[0].cell(0, 0)._tc.tcPr
+    assert properties.find(qn("w:shd")).get(qn("w:fill")) == "EFF2FB"
+    assert properties.find(qn("w:tcBorders")).find(qn("w:left")).get(qn("w:val")) == "dotted"
+    assert properties.find(qn("w:tcBorders")).find(qn("w:top")).get(qn("w:val")) == "double"
+    report = client.get(job["links"]["quality"]).json()
+    assert report["warnings"] == job["warnings"]
+    assert report["metrics"]["character_coverage"]["value"] == 1
+
+
+def test_hwp_background_loss_is_rejected(hwp_samples, tmp_path):
+    source = hwp_samples["decorated"]
+    analysis = HwpAnalyzer().analyze(source, tmp_path)
+    result = HwpCliEngine().convert(source, analysis, ConversionOptions(), tmp_path, lambda event: None)
+    HwpDocxPostProcessor().process(result.docx_path, analysis)
+    doc = Document(result.docx_path)
+    properties = doc.tables[0].cell(0, 0)._tc.tcPr
+    properties.remove(properties.find(qn("w:shd")))
+    doc.save(result.docx_path)
+    with pytest.raises(DomainError) as error:
+        QualityValidator().validate(result.docx_path, analysis)
+    assert error.value.code == "VALIDATION_FAILED"
+
+
+@pytest.mark.parametrize("difference", [283, 301])
+def test_hwp_small_row_width_difference_is_bounded_and_recorded(difference):
+    table = {"cols": 2, "cells": [
+        {"col": 0, "col_span": 2, "width": 30000 - difference},
+        {"col": 0, "col_span": 1, "width": 10000},
+        {"col": 1, "col_span": 1, "width": 20000},
+    ]}
+    if difference > 300:
+        with pytest.raises(DomainError):
+            column_widths(table)
+    else:
+        assert column_widths(table) == [10000, 20000]
+        assert table["width_adjustment_hu"] == 283
+
+
+def test_hwp_image_fill_and_unsupported_gradients_remain_rejected():
+    for fill in ({"fill_type": 2}, {"fill_type": 4, "gradient": {"radial": True}},
+                 {"fill_type": 4, "gradient": {"radial": False, "stops": [[0, 0], [0.5, 1], [1, 2]]}}):
+        with pytest.raises(DomainError) as error:
+            resolve_fill(fill)
+        assert error.value.code == "UNSUPPORTED_FEATURE"
+    assert resolve_fill({"fill_type": 1, "bg_color": 0xFFFFFFFF})["background"] is None

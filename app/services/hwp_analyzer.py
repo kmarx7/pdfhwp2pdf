@@ -11,6 +11,7 @@ from app.domain.errors import DomainError
 from app.domain.models import DocumentAnalysis
 from app.engines.hwp.cli import HwpCli
 from app.services.hwp_page_numbers import parse_page_number, unsupported_page_number
+from app.postprocess.hwp_fills import resolve_fill
 
 OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 MAX_STREAM = 20 * 1024 * 1024
@@ -218,6 +219,16 @@ class HwpAnalyzer:
         if not any(text.strip() for text in texts):
             raise DomainError("NO_EDITABLE_TEXT", "HWP에서 편집 가능한 본문 텍스트를 찾지 못했습니다.")
         image_hashes = self.picture_hashes(model, pictures)
+        fills = model["header"]["border_fills"]
+        used_fills = {cell["border_fill"] for table in tables for cell in table["cells"]}
+        approximated = set()
+        for index in used_fills:
+            if not 1 <= index <= len(fills):
+                raise DomainError("INVALID_DOCUMENT", "HWP 표 배경 참조가 올바르지 않습니다.")
+            if resolve_fill(fills[index - 1])["approximation"]:
+                approximated.add(index)
+        if approximated:
+            warnings.append("서식 변경: 표의 두 색상 선형 그라데이션 배경을 중간색의 단색 배경으로 근사했습니다. 그라데이션 효과는 보존되지 않았습니다. 본문·표는 편집 가능하며 원본과 배경을 비교해 주세요.")
         fonts = sorted({font["name"] for group in model["header"]["fonts"] for font in group})
         start_numbers = model["header"].get("properties", {}).get("start_numbers", [1])
         page_start = max(1, int(start_numbers[0]))

@@ -297,6 +297,7 @@ class JobService:
                     self.persist(job)
                 elif stage == "complete":
                     result = event
+                    job["warnings"] = event.get("warnings", job["warnings"])
                 elif stage == "failed":
                     failure = event["error"]
                 elif stage == "native_started":

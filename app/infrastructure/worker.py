@@ -64,7 +64,7 @@ def run(workspace: Path, max_pages: int, emit) -> None:
     result.docx_path.replace(output)
     atomic_json(workspace / "output/quality.json", quality)
     emit({"stage": "complete", "engine": quality["engine"], "pages": analysis.pages,
-          "sha256": hashlib.sha256(output.read_bytes()).hexdigest()})
+          "sha256": hashlib.sha256(output.read_bytes()).hexdigest(), "warnings": analysis.warnings})
 
 
 def main() -> int:
