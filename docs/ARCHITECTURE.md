@@ -1,6 +1,6 @@
 # 시스템 아키텍처
 
-기준일: 2026-10-24. 아래는 **구현 예정 명세**다. 현재 파일은 설계 문서와 환경 probe뿐이다. 제품 범위는 [PRD](PRD.md), 변환 정책은 [CONVERSION_SPEC](CONVERSION_SPEC.md)를 따른다.
+기준일: 2026-10-24. 아래는 1단계 아키텍처 기준 명세이며 계획·확장 구조를 포함한다. 2단계에 구현한 모듈·명세와의 차이·제한은 [STAGE2_REPORT](STAGE2_REPORT.md)에 기록한다. 현재 실행 코드 구조·명령은 [README](../README.md)를 기준으로 한다. 제품 범위는 [PRD](PRD.md), 변환 정책은 [CONVERSION_SPEC](CONVERSION_SPEC.md)를 따른다.
 
 ## 1. 실행 구성
 
@@ -48,7 +48,7 @@ flowchart TD
 
 ## 3. 예정 폴더 구조
 
-아래 트리 중 `app/`, `tests/`, `runtime/`, `pyproject.toml`, `requirements.lock`, `Dockerfile`은 **아직 생성하지 않았다**. `.venv/`, `scripts/probe_environment.py`, 조사용 의존성 목록과 문서는 현재 존재한다.
+아래 트리는 최종 확장을 포함한 설계 목표다. 2단계에 `app/`, `tests/`, `runtime/`, `pyproject.toml`, `requirements.lock`을 생성했다. API는 `app/main.py`, 작업 큐·저장·정리는 `app/services/job_service.py`에 통합했고 HWP/HWPX/OCR·렌더러·Dockerfile은 만들지 않았다. 실제 구조는 README를 참고한다.
 
 ```text
 .

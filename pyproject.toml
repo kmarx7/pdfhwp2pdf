@@ -1,0 +1,16 @@
+[project]
+name = "pdfdocx-local"
+version = "0.2.0"
+description = "Local editable PDF to DOCX converter"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "fastapi", "uvicorn", "python-multipart", "PyMuPDF==1.26.7",
+  "pdf2docx==0.5.13", "python-docx==1.2.0", "defusedxml", "psutil",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "httpx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

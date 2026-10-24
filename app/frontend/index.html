@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f6f8f7">
+  <title>문서잇 — PDF를 편집 가능한 Word로</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#converter">변환 도구로 이동</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="문서잇 홈">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4M9 12h6M9 16h4"/></svg></span>
+        <span>문서잇<span class="brand-dot">.</span></span>
+      </a>
+      <div class="header-right"><span class="header-tool">PDF → Word</span><span class="local-badge"><i></i> 로컬에서 안전하게</span></div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <span class="eyebrow"><span></span> 문서의 다음 작업을 이어가세요</span>
+        <h1 id="page-title">PDF의 내용을,<br><span>Word에서 자유롭게.</span></h1>
+        <p>텍스트와 표를 편집할 수 있는 Word 문서로 바꿔보세요.<br class="desktop-break"> 파일은 외부로 전송하지 않고, 이 컴퓨터에서 처리합니다.</p>
+      </section>
+
+      <section id="converter" class="converter-card" aria-label="PDF를 Word로 변환">
+        <div class="workspace">
+          <div class="section-heading"><span class="step-number">01</span><h2>PDF 파일 업로드</h2><span class="one-file">한 번에 한 파일</span></div>
+          <div id="drop-zone" class="drop-zone">
+            <input id="file-input" class="visually-hidden" type="file" accept=".pdf,application/pdf" aria-label="PDF 파일 선택">
+            <div class="file-illustration" aria-hidden="true">
+              <div class="paper paper-back"></div><div class="paper paper-front"><svg viewBox="0 0 40 48"><path d="M10 1h17l11 11v34H2V1z"/><path d="M26 1v12h12M10 23h20M10 29h20M10 35h13"/></svg><span>PDF</span></div>
+              <span class="upload-symbol">↑</span>
+            </div>
+            <h3>PDF 파일을 여기에 놓으세요</h3>
+            <p>또는 아래 버튼으로 파일을 선택하세요</p>
+            <button id="choose-button" class="button button-secondary" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m-4 4 4-4 4 4M3 12v5h14v-5"/></svg>파일 선택</button>
+            <span class="upload-limit">PDF · 최대 30 MiB · 100페이지</span>
+          </div>
+
+          <div id="selected-file" class="selected-file" hidden>
+            <span class="pdf-icon" aria-hidden="true">PDF</span>
+            <div class="file-details"><strong id="file-name"></strong><span id="file-meta"></span></div>
+            <button id="remove-file" class="icon-button" type="button" aria-label="선택 파일 지우기">×</button>
+          </div>
+
+          <div id="status-panel" class="status-panel" role="status" aria-live="polite" aria-atomic="true" hidden>
+            <div class="status-heading"><span id="status-icon" class="status-icon" aria-hidden="true"></span><div><h3 id="status-title"></h3><p id="status-description"></p></div></div>
+            <ol id="stage-list" class="stage-list" aria-label="변환 단계"><li data-stage="analyzing">분석</li><li data-stage="converting">변환</li><li data-stage="postprocessing">서식 정리</li><li data-stage="validating">검증</li></ol>
+            <div id="activity" class="activity" aria-hidden="true"><span></span></div>
+            <div id="error-detail" class="error-detail" hidden><code id="error-code"></code><p id="error-suggestion"></p></div>
+            <div id="result-actions" class="result-actions" hidden><a id="download-button" class="button button-primary" href="#" download="converted.docx"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M3 13v4h14v-4"/></svg>Word 파일 다운로드</a><button id="quality-button" class="text-button" type="button">검증 정보 보기</button></div>
+            <div id="quality-detail" class="quality-detail" hidden></div>
+            <ul id="warnings" class="warnings" hidden></ul>
+            <p id="expiry" class="expiry" hidden></p>
+          </div>
+
+          <div class="workspace-footer"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M9 2 3 4v5c0 4 6 7 6 7s6-3 6-7V4z"/><path d="m6 9 2 2 4-4"/></svg><span>외부 업로드 없이, 내 컴퓨터 안에서</span></div>
+        </div>
+
+        <aside class="settings-panel" aria-labelledby="settings-title">
+          <div class="section-heading"><span class="step-number">02</span><h2 id="settings-title">변환 설정</h2></div>
+          <div class="format-flow" aria-label="PDF에서 DOCX로 변환"><div><span class="format-label pdf-label">PDF</span><span>원본 문서</span></div><svg viewBox="0 0 32 20" aria-hidden="true"><path d="M2 10h26m-6-6 6 6-6 6"/></svg><div><span class="format-label word-label">DOCX</span><span>편집 가능한 Word</span></div></div>
+          <div class="mode-heading"><h3>변환 모드</h3><span>기본 모드</span></div>
+          <label class="mode-option"><input type="radio" name="mode" value="balanced" checked><span><strong>균형 있게 변환</strong><small>문단과 표의 구조, 원본 배치를 함께 고려해요.</small></span><span class="selected-dot" aria-hidden="true"></span></label>
+          <div class="conversion-notes"><h3>변환 전 확인해 주세요</h3><ul><li>텍스트 기반 PDF를 지원해요.</li><li>스캔 PDF와 암호화된 PDF는 지원하지 않아요.</li><li>복잡한 표와 다단 편집은 결과 확인이 필요해요.</li></ul></div>
+          <button id="convert-button" class="button button-primary convert-button" type="button" disabled>Word로 변환하기 <span aria-hidden="true">→</span></button>
+          <button id="cancel-button" class="text-button cancel-button" type="button" hidden>작업 취소 및 파일 삭제</button>
+          <button id="reset-button" class="text-button reset-button" type="button" hidden>다른 파일 변환하기</button>
+          <p id="engine-notice" class="engine-notice">PDF 파일을 먼저 선택해 주세요.</p>
+        </aside>
+      </section>
+
+      <section class="benefits" aria-label="변환 도구 특징">
+        <article><span class="benefit-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14M12 4v16M8 20h8M5 4v3M19 4v3"/></svg></span><div><h3>수정할 수 있는 텍스트</h3><p>본문을 Word 텍스트로 변환해요.</p></div></article>
+        <article><span class="benefit-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M10 4v16"/></svg></span><div><h3>표도 문서의 일부로</h3><p>단순 표를 실제 Word 표로 복원해요.</p></div></article>
+        <article><span class="benefit-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg></span><div><h3>필요한 동안만 보관</h3><p>결과 파일은 완료 후 1시간 동안 제공해요.</p></div></article>
+      </section>
+    </main>
+
+    <footer class="site-footer"><span>문서잇 <span class="footer-divider">/</span> PDF → Word 로컬 MVP</span><p>앱이 꺼져 있는 동안 남은 임시 파일은 다음 실행 시 정리합니다.<br>변환 후 중요한 내용과 서식을 확인해 주세요.</p></footer>
+  </div>
+</body>
+</html>

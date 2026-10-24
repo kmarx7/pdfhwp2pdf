@@ -1,0 +1,244 @@
+"use strict";
+const $ = (id) => document.getElementById(id);
+const stages = ["analyzing", "converting", "postprocessing", "validating"];
+const messages = {
+  queued: ["변환 순서를 기다리고 있어요", "앞선 작업이 끝나면 자동으로 시작합니다."],
+  analyzing: ["PDF를 살펴보고 있어요", "텍스트와 표, 페이지 정보를 확인합니다."],
+  converting: ["Word 문서로 변환하고 있어요", "텍스트와 표를 편집 가능한 문서 개체로 옮깁니다."],
+  postprocessing: ["문서 정보를 정리하고 있어요", "변환된 문서의 속성을 정리합니다."],
+  validating: ["변환 결과를 확인하고 있어요", "텍스트 누락과 Word 표 구조를 검사합니다."],
+};
+let file = null;
+let csrf = "";
+let jobId = sessionStorage.getItem("pdfdocx_job");
+let busy = false;
+let timer = null;
+let generation = 0;
+let currentJob = null;
+let engineReady = false;
+
+function fileSize(bytes) {
+  return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1024 / 1024).toFixed(2)} MiB`;
+}
+
+async function request(url, options = {}) {
+  const response = await fetch(url, { credentials: "same-origin", signal: AbortSignal.timeout(15000), ...options });
+  if (!response.ok) {
+    let data;
+    try { data = await response.json(); } catch { data = {}; }
+    const error = new Error(data.error?.message || "서버에 연결하지 못했습니다.");
+    error.info = data.error || { code: "REQUEST_FAILED", suggestion: "잠시 후 다시 시도하세요." };
+    throw error;
+  }
+  return response;
+}
+
+function setBusy(value) {
+  busy = value;
+  $("file-input").disabled = value;
+  $("choose-button").disabled = value;
+  $("remove-file").disabled = value;
+  $("convert-button").disabled = value || !file || !engineReady;
+  $("cancel-button").hidden = !value || !jobId;
+}
+
+function showStatus(title, description, kind = "working") {
+  $("status-panel").hidden = false;
+  $("status-panel").className = `status-panel ${kind}`;
+  $("status-title").textContent = title;
+  $("status-description").textContent = description;
+  $("activity").hidden = kind !== "working";
+  $("stage-list").hidden = kind !== "working";
+}
+
+function showError(error) {
+  showStatus(error.message || "변환을 완료하지 못했어요", "아래 내용을 확인한 뒤 다시 시도해 주세요.", "error");
+  $("error-detail").hidden = false;
+  $("error-code").textContent = error.info?.code || "NETWORK_ERROR";
+  $("error-suggestion").textContent = error.info?.suggestion || "서버 실행 상태와 연결을 확인한 뒤 다시 시도하세요.";
+  $("result-actions").hidden = true;
+  $("reset-button").hidden = false;
+}
+
+function clearStatus() {
+  for (const id of ["status-panel", "error-detail", "result-actions", "quality-detail", "warnings", "expiry", "reset-button"]) $(id).hidden = true;
+  $("quality-detail").replaceChildren();
+}
+
+async function selectFile(selected) {
+  if (busy || !selected) return;
+  if (!selected.name.toLowerCase().endsWith(".pdf")) {
+    showError({ message: "PDF 파일을 선택해 주세요.", info: { code: "UNSUPPORTED_FORMAT", suggestion: "현재 PDF 형식만 지원합니다." } });
+    return;
+  }
+  if (!selected.size || selected.size > 30 * 1024 * 1024) {
+    showError({ message: "파일 크기를 확인해 주세요.", info: { code: "FILE_SIZE_INVALID", suggestion: "비어 있지 않은 30 MiB 이하 PDF를 선택하세요." } });
+    return;
+  }
+  await discardJob();
+  file = selected;
+  clearStatus();
+  $("drop-zone").hidden = true;
+  $("selected-file").hidden = false;
+  $("file-name").textContent = selected.name;
+  $("file-name").title = selected.name;
+  $("file-meta").textContent = `PDF 문서 · ${fileSize(selected.size)}`;
+  $("engine-notice").textContent = "파일을 확인했어요. 변환을 시작해 보세요.";
+  setBusy(false);
+}
+
+async function discardJob() {
+  generation += 1;
+  clearTimeout(timer);
+  const previous = jobId;
+  jobId = null;
+  currentJob = null;
+  sessionStorage.removeItem("pdfdocx_job");
+  if (previous && csrf) {
+    try { await request(`/api/v1/jobs/${previous}`, { method: "DELETE", headers: { "X-CSRF-Token": csrf } }); }
+    catch { /* 서버의 TTL 정리 정책은 유지된다. */ }
+  }
+}
+
+async function reset() {
+  await discardJob();
+  file = null;
+  $("file-input").value = "";
+  $("selected-file").hidden = true;
+  $("drop-zone").hidden = false;
+  $("engine-notice").textContent = "PDF 파일을 먼저 선택해 주세요.";
+  clearStatus();
+  setBusy(false);
+  $("choose-button").focus();
+}
+
+async function poll(id, token) {
+  if (token !== generation || id !== jobId) return;
+  try {
+    const job = await (await request(`/api/v1/jobs/${id}`)).json();
+    if (token !== generation || id !== jobId) return;
+    currentJob = job;
+    $("file-meta").textContent = `PDF 문서 · ${fileSize(job.size_bytes)}${job.progress.total_pages ? ` · ${job.progress.total_pages}페이지` : ""}`;
+    $("error-detail").hidden = true;
+    if (job.state === "succeeded") {
+      setBusy(false);
+      $("convert-button").disabled = true;
+      showStatus("Word 문서가 준비되었어요", "편집 가능한 텍스트와 기본 구조 검사를 통과했습니다.", "success");
+      $("download-button").href = job.links.download;
+      $("result-actions").hidden = false;
+      $("reset-button").hidden = false;
+      $("engine-notice").textContent = "다운로드 후 중요한 내용과 서식을 확인해 주세요.";
+      $("expiry").textContent = `${new Date(job.expires_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}까지 다운로드할 수 있어요. 결과 파일명: converted.docx`;
+      $("expiry").hidden = false;
+      $("warnings").replaceChildren(...job.warnings.map((text) => {
+        const li = document.createElement("li"); li.textContent = text; return li;
+      }));
+      $("warnings").hidden = job.warnings.length === 0;
+      return;
+    }
+    if (["failed", "cancelled", "expired"].includes(job.state)) {
+      setBusy(false);
+      showError({ message: job.error?.message || "작업이 종료되었습니다.", info: job.error });
+      return;
+    }
+    const [title, description] = messages[job.state] || ["작업을 정리하고 있어요", "잠시만 기다려 주세요."];
+    showStatus(title, description);
+    document.querySelectorAll("#stage-list li").forEach((node, i) => {
+      const index = stages.indexOf(job.stage);
+      node.className = i === index ? "current" : i < index ? "done" : "";
+    });
+    timer = setTimeout(() => poll(id, token), document.hidden ? 5000 : 1000);
+  } catch (error) {
+    if (token !== generation) return;
+    if (["JOB_NOT_FOUND", "JOB_EXPIRED"].includes(error.info?.code)) {
+      setBusy(false); showError(error); return;
+    }
+    showStatus("연결을 다시 확인하고 있어요", "서버의 작업 상태를 확인하는 중입니다. 자동으로 다시 연결합니다.");
+    timer = setTimeout(() => poll(id, token), 5000);
+  }
+}
+
+async function convert() {
+  if (!file || busy || !engineReady) return;
+  await discardJob();
+  clearStatus();
+  setBusy(true);
+  showStatus("파일을 전송하고 있어요", "이 컴퓨터의 로컬 변환 서버로 전달합니다.");
+  const form = new FormData();
+  form.append("file", file);
+  form.append("mode", "balanced");
+  form.append("ocr", "off");
+  try {
+    const response = await request("/api/v1/jobs", { method: "POST", body: form, headers: { "X-CSRF-Token": csrf } });
+    const job = await response.json();
+    jobId = job.job_id;
+    sessionStorage.setItem("pdfdocx_job", jobId);
+    $("cancel-button").hidden = false;
+    await poll(jobId, generation);
+  } catch (error) {
+    setBusy(false); showError(error);
+  }
+}
+
+$("choose-button").addEventListener("click", () => $("file-input").click());
+$("file-input").addEventListener("change", (event) => selectFile(event.target.files[0]));
+$("remove-file").addEventListener("click", reset);
+$("reset-button").addEventListener("click", reset);
+$("convert-button").addEventListener("click", convert);
+$("cancel-button").addEventListener("click", async () => {
+  $("cancel-button").disabled = true;
+  try {
+    if (jobId) await request(`/api/v1/jobs/${jobId}`, { method: "DELETE", headers: { "X-CSRF-Token": csrf } });
+    await reset();
+  } catch (error) { showError(error); }
+  finally { $("cancel-button").disabled = false; }
+});
+for (const event of ["dragenter", "dragover"]) $("drop-zone").addEventListener(event, (e) => { e.preventDefault(); if (!busy) $("drop-zone").classList.add("dragging"); });
+for (const event of ["dragleave", "drop"]) $("drop-zone").addEventListener(event, (e) => { e.preventDefault(); $("drop-zone").classList.remove("dragging"); });
+$("drop-zone").addEventListener("drop", (event) => {
+  if (event.dataTransfer.files.length !== 1) {
+    showError({ message: "파일을 한 개씩 선택해 주세요.", info: { code: "ONE_FILE_REQUIRED", suggestion: "한 번에 하나의 PDF를 변환합니다." } }); return;
+  }
+  selectFile(event.dataTransfer.files[0]);
+});
+// 브라우저가 드롭한 문서로 페이지를 이동하지 않도록 한다.
+window.addEventListener("dragover", (event) => event.preventDefault());
+window.addEventListener("drop", (event) => event.preventDefault());
+$("quality-button").addEventListener("click", async () => {
+  if (!currentJob) return;
+  try {
+    const report = await (await request(currentJob.links.quality)).json();
+    const details = ["확인됨: DOCX 재열기 · 텍스트 개체 · 본문 문자 보존 검사", `실제 Word 표: ${report.metrics.word_table_count.value}개`, "미검증: 실제 Word 편집 · 시각 유사도 · 복잡한 문서 품질"];
+    $("quality-detail").replaceChildren(...details.map((text) => { const p = document.createElement("p"); p.textContent = text; return p; }));
+    $("quality-detail").hidden = !$("quality-detail").hidden;
+  } catch (error) { showError(error); }
+});
+$("download-button").addEventListener("click", async (event) => {
+  event.preventDefault();
+  if (!currentJob) return;
+  try {
+    const response = await request(currentJob.links.download);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = "converted.docx"; document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (error) { showError(error); }
+});
+
+async function initialize() {
+  try {
+    const [session, capability] = await Promise.all([request("/api/v1/session"), request("/api/v1/capabilities")]);
+    csrf = (await session.json()).csrf_token;
+    const capabilities = await capability.json();
+    engineReady = capabilities.formats.pdf.availability !== "unavailable";
+    if (!engineReady) throw new Error("PDF 변환 엔진을 사용할 수 없습니다. 서버의 패키지 설치 상태를 확인하세요.");
+    setBusy(false);
+    if (jobId) {
+      $("drop-zone").hidden = true; $("selected-file").hidden = false;
+      $("file-name").textContent = "이전 변환 작업";
+      setBusy(true); await poll(jobId, generation);
+    }
+  } catch (error) { showError(error); $("engine-notice").textContent = "서버 연결 또는 변환 엔진을 확인해 주세요."; }
+}
+initialize();

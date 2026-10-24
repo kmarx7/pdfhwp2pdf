@@ -1,0 +1,62 @@
+{
+  "checked_at": "2026-10-24T04:48:09.909821+00:00",
+  "python": "3.11.15",
+  "system": "Darwin",
+  "macos": "27.0.1",
+  "machine": "arm64",
+  "project_venv": true,
+  "python_3_11": true,
+  "packages": {
+    "PyMuPDF": {
+      "version": "1.26.7",
+      "import": "ok"
+    },
+    "pdf2docx": {
+      "version": "0.5.13",
+      "import": "ok"
+    },
+    "python-docx": {
+      "version": "1.2.0",
+      "import": "ok"
+    },
+    "fastapi": {
+      "version": "0.162.0",
+      "import": "ok"
+    },
+    "uvicorn": {
+      "version": "0.54.0",
+      "import": "ok"
+    },
+    "python-multipart": {
+      "version": "0.0.32",
+      "import": "ok"
+    },
+    "pytest": {
+      "version": "9.1.1",
+      "import": "ok"
+    },
+    "httpx": {
+      "version": "0.28.1",
+      "import": "ok"
+    },
+    "defusedxml": {
+      "version": "0.7.1",
+      "import": "ok"
+    },
+    "olefile": {
+      "version": "0.47",
+      "import": "ok"
+    }
+  },
+  "smoke": {
+    "status": "passed",
+    "input_kind": "synthetic_single_page_english_pdf",
+    "checks": [
+      "docx_reopened",
+      "marker_in_paragraph_text"
+    ],
+    "real_document_quality_verified": false,
+    "temporary_files": "deleted_on_exit"
+  },
+  "real_document_quality_verified": false
+}
