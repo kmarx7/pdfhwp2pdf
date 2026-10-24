@@ -95,8 +95,16 @@ function showError(error) {
   $("error-detail").hidden = false;
   $("error-code").textContent = error.info?.code || "NETWORK_ERROR";
   $("error-suggestion").textContent = error.info?.suggestion || "서버 실행 상태와 연결을 확인한 뒤 다시 시도하세요.";
+  // 이전 버전에서 저장된 실패 작업도 실제로 감지한 요소를 보여 준다.
+  const legacyLabels = { pgnp: "쪽 번호 위치 설정", head: "머리말", foot: "꼬리말" };
+  const features = error.info?.details?.features;
+  if (error.info?.code === "UNSUPPORTED_FEATURE" && Array.isArray(features) && features.length) {
+    const labels = error.info.details.feature_labels || features.map((feature) => legacyLabels[feature] || "미지원 문서 요소");
+    $("error-suggestion").textContent = `감지된 미지원 요소: ${[...new Set(labels)].join(" · ")}. 이 요소를 보존하는 변환은 아직 지원하지 않습니다. 같은 파일을 다시 시도해도 해결되지 않습니다.`;
+  }
   $("result-actions").hidden = true;
   $("reset-button").hidden = false;
+  $("engine-notice").textContent = "변환이 완료되지 않았습니다. 오류 원인을 확인해 주세요.";
 }
 
 function clearStatus() {
@@ -112,7 +120,7 @@ async function selectFile(selected) {
     return;
   }
   if (!selected.size || selected.size > 30 * 1024 * 1024) {
-    showError({ message: "파일 크기를 확인해 주세요.", info: { code: "FILE_SIZE_INVALID", suggestion: "비어 있지 않은 30 MiB 이하 PDF를 선택하세요." } });
+    showError({ message: "파일 크기를 확인해 주세요.", info: { code: "FILE_SIZE_INVALID", suggestion: "비어 있지 않은 30 MiB 이하 PDF 또는 HWP를 선택하세요." } });
     return;
   }
   await discardJob();

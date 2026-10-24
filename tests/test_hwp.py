@@ -101,9 +101,26 @@ def test_hwp_protection_and_unsupported_features_fail_without_output(client, hwp
     job = wait_job(client, submit(client, hwp_samples[kind]).json()["job_id"])
     assert job["state"] == "failed", job
     assert job["error"]["code"] == code
+    if kind == "header":
+        assert job["error"]["details"]["feature_labels"] == ["머리말"]
+        assert "감지된 미지원 요소: 머리말." in job["error"]["suggestion"]
     assert job["links"]["download"] is None
     assert client.get(job["links"]["self"] + "/download").status_code == 409
     assert not (client.app.state.jobs.space(job["job_id"]).path / "output").exists()
+
+
+@pytest.mark.parametrize(("control", "label"), [("pgnp", "쪽 번호 위치 설정"), ("zzzz", "미지원 문서 요소")])
+def test_hwp_unsupported_error_names_detected_feature(control, label):
+    model = {"sections": [{"paragraphs": [{
+        "chars": [{"Text": "본문"}, {"ExtCtrl": {"ctrl_index": 0}}],
+        "controls": [{"Generic": {"ctrl_id": list(control.encode("ascii"))}}],
+    }]}]}
+    with pytest.raises(DomainError) as error:
+        HwpAnalyzer().inspect_model(model)
+    assert error.value.code == "UNSUPPORTED_FEATURE"
+    assert error.value.details == {"features": [control], "feature_labels": [label]}
+    assert f"감지된 미지원 요소: {label}." in error.value.suggestion
+    assert "머리말·꼬리말" not in error.value.suggestion
 
 
 def test_hwp_invalid_and_mismatched_files(client, hwp_samples, samples):

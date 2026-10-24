@@ -15,6 +15,16 @@ OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 MAX_STREAM = 20 * 1024 * 1024
 MAX_TOTAL = 200 * 1024 * 1024
 MAX_IR = 64 * 1024 * 1024
+FEATURE_LABELS = {
+    "pgnp": "쪽 번호 위치 설정", "head": "머리말", "foot": "꼬리말",
+    "cold": "다단 설정", "eqed": "수식", "gso": "도형",
+    "fn": "각주", "en": "미주", "atno": "자동 번호", "nwno": "새 번호 지정",
+    "pgct": "쪽 번호 제어", "pghd": "쪽 감추기",
+    "opaque_paragraph_record": "해석되지 않은 문단 속성",
+    "opaque_section_record": "해석되지 않은 구역 속성",
+    "unreferenced_control": "연결되지 않은 문서 개체",
+    "unresolved_control": "참조를 확인할 수 없는 문서 개체",
+}
 
 
 def guard_hwp_container(source: Path) -> None:
@@ -184,9 +194,12 @@ class HwpAnalyzer:
                 unsupported.add("opaque_section_record")
             walk(section["paragraphs"])
         if unsupported:
+            features = sorted(unsupported)
+            labels = [FEATURE_LABELS.get(feature, "미지원 문서 요소") for feature in features]
+            summary = " · ".join(dict.fromkeys(labels))
             raise DomainError("UNSUPPORTED_FEATURE", "현재 보존할 수 없는 HWP 요소가 포함되어 변환을 중단했습니다.",
-                              details={"features": sorted(unsupported)},
-                              suggestion="머리말·꼬리말·필드·도형·수식·다단 등 복잡한 요소는 아직 지원하지 않습니다.")
+                              details={"features": features, "feature_labels": labels},
+                              suggestion=f"감지된 미지원 요소: {summary}. 이 요소를 보존하는 변환은 아직 지원하지 않습니다. 같은 파일을 다시 시도해도 해결되지 않습니다.")
         if not any(text.strip() for text in texts):
             raise DomainError("NO_EDITABLE_TEXT", "HWP에서 편집 가능한 본문 텍스트를 찾지 못했습니다.")
         image_hashes = self.picture_hashes(model, pictures)
