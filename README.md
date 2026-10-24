@@ -4,6 +4,8 @@
 
 **현재 상태: PDF MVP + HWP 5 베타 구현.** HWPX·OCR은 구현하지 않았습니다. 복잡한 실무 문서 품질과 실제 Microsoft Word 앱의 편집·렌더링은 미검증입니다. 따라서 엔진 상태는 `experimental`로 표시합니다.
 
+**HWP 레이아웃 품질 미달 확인:** 사용자 실문서를 한글 뷰어와 Word에서 비교하니 원본 16쪽이 기존 DOCX에서는 8쪽으로 표시됐습니다. 현재 HWP 직접 변환은 **편집용 초안**이며, 원본 서식 보존 요구사항을 충족했다고 판단할 수 없습니다. 빈 문단·강제 쪽 나눔·160% 줄 간격·본문 여백·표 셀 정렬/최소 높이를 부분 보완했지만, 후보 결과도 글꼴과 페이지 배치가 달랐습니다. 자동 테스트 통과·텍스트 보존율은 시각 품질 합격이 아닙니다. [실제 Word 검토 보고서](docs/HWP_LAYOUT_REVIEW.md)
+
 ## 실행
 
 Python 3.11을 사용합니다. 시스템 Python이나 다른 프로젝트 환경은 변경하지 않습니다.
@@ -11,7 +13,7 @@ Python 3.11을 사용합니다. 시스템 Python이나 다른 프로젝트 환�
 ```bash
 git clone https://github.com/kmarx7/pdfhwp2pdf.git
 cd pdfhwp2pdf
-git switch fix/hwp-table-fills
+git switch fix/hwp-layout-fidelity
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/install_hwp_engine.py
@@ -64,7 +66,7 @@ node --check app/frontend/static/app.js
 .venv/bin/python scripts/install_hwp_engine.py
 # 네트워크 제한 환경에서 공식 배포물을 미리 받은 경우
 .venv/bin/python scripts/install_hwp_engine.py --archive /path/to/hwp-v1.3.1-aarch64-apple-darwin.tar.gz
-# 직접 시험할 합성 HWP 15개 생성 (기존 파일 덮어쓰기 없음)
+# 직접 시험할 합성 HWP 16개 생성 (기존 파일 덮어쓰기 없음)
 .venv/bin/python scripts/make_test_hwps.py --output-dir runtime/my-hwp-samples
 ```
 

@@ -64,6 +64,8 @@ class QualityValidator:
                                           "value": analysis.pages},
                     "cer": {"status": "not_measured", "value": None, "reason": "ground_truth_missing"},
                     "visual_ssim": {"status": "not_measured", "value": None, "reason": "renderer_not_run"},
+                    "hwp_layout_hints": {"status": "measured" if analysis.engine_data.get("layout_metrics") else "not_applicable",
+                                         "value": analysis.engine_data.get("layout_metrics"), "visual_fidelity_verified": False},
                 },
                 "manual_review": {"word_edit": "not_performed"},
                 "warnings": analysis.warnings,
@@ -134,6 +136,12 @@ class QualityValidator:
             raise ValueError("HWP images missing or changed")
         if len(document.sections) != analysis.engine_data["sections"]:
             raise ValueError("HWP section count changed")
+        layout = analysis.engine_data.get("layout_metrics")
+        if layout:
+            breaks = [node for node in root.findall(f".//{W}pageBreakBefore")
+                      if node.get(f"{W}val", "true") not in {"false", "0", "off"}]
+            if len(breaks) != layout["explicit_page_breaks"]:
+                raise ValueError("HWP explicit page breaks changed")
         for section, (width, height) in zip(document.sections, analysis.page_sizes):
             if abs(section.page_width.pt - width) > 1 or abs(section.page_height.pt - height) > 1:
                 raise ValueError("HWP page size changed")

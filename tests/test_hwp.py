@@ -321,3 +321,27 @@ def test_hwp_image_fill_and_unsupported_gradients_remain_rejected():
             resolve_fill(fill)
         assert error.value.code == "UNSUPPORTED_FEATURE"
     assert resolve_fill({"fill_type": 1, "bg_color": 0xFFFFFFFF})["background"] is None
+
+
+def test_hwp_empty_paragraph_line_spacing_and_explicit_page_break(client, hwp_samples):
+    job = wait_job(client, submit(client, hwp_samples["layout"]).json()["job_id"])
+    assert job["state"] == "succeeded", job
+    doc = Document(BytesIO(client.get(job["links"]["download"]).content))
+    assert len(doc.paragraphs) == 4  # 구역 설정 빈 문단 + 제목 + 원본 빈 문단 + 본문
+    assert doc.paragraphs[2].text == ""
+    assert doc.paragraphs[-1].paragraph_format.page_break_before is True
+    assert abs(doc.paragraphs[-1].paragraph_format.line_spacing - 1.6) < 0.01
+    assert "Editable text." in doc.paragraphs[-1].text
+    # HWP 본문 영역은 상단 여백과 머리말 영역을 함께 포함한다.
+    assert doc.sections[0].top_margin.mm > 18
+    report = client.get(job["links"]["quality"]).json()
+    assert report["metrics"]["hwp_layout_hints"]["value"]["explicit_page_breaks"] == 1
+    assert report["metrics"]["hwp_layout_hints"]["visual_fidelity_verified"] is False
+
+
+def test_hwp_row_height_is_minimum_and_cells_keep_vertical_alignment(client, hwp_samples):
+    job = wait_job(client, submit(client, hwp_samples["table"]).json()["job_id"])
+    assert job["state"] == "succeeded", job
+    doc = Document(BytesIO(client.get(job["links"]["download"]).content))
+    assert all(row.height is not None and row.height_rule == 1 for row in doc.tables[0].rows)
+    assert doc.tables[0].cell(0, 0).vertical_alignment == 1

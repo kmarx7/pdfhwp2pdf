@@ -78,6 +78,9 @@ def replace_property(parent, name: str, attributes: dict, before: str | None = N
 class HwpDocxPostProcessor:
     def process(self, path: Path, analysis: DocumentAnalysis) -> None:
         document = Document(path)
+        if analysis.engine_data.get("layout_model"):
+            from app.postprocess.hwp_layout import HwpLayoutPostProcessor
+            analysis.engine_data["layout_metrics"] = HwpLayoutPostProcessor().process(document, analysis.engine_data["layout_model"])
         tables = document.element.findall(".//" + qn("w:tbl"))
         sources = analysis.engine_data["tables"]
         if len(tables) != len(sources):

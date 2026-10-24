@@ -110,6 +110,7 @@ class HwpAnalyzer:
         placement = None
         section_has_text = False
         warnings = ["HWP 변환은 실험 기능입니다. 실제 Word 화면과 복잡한 실무 문서 품질은 미검증입니다.",
+                    "HWP 직접 변환 결과는 편집용 초안입니다. 원본과 글꼴·줄바꿈·페이지 수가 크게 달라질 수 있으며 원본 레이아웃 보존 검증을 통과한 결과가 아닙니다.",
                     "원본 글꼴 이름·크기와 기본 문단/표를 옮기며 페이지 배치·장식·자동 번호의 동일함은 보장하지 않습니다.",
                     "이미지는 인라인으로 배치하며 회전·자르기 효과는 보존되지 않을 수 있습니다. Word에 원본 글꼴이 없으면 대체됩니다."]
 
@@ -237,7 +238,8 @@ class HwpAnalyzer:
         return DocumentAnalysis(None, sizes, texts, fonts, len(tables), list(dict.fromkeys(warnings)), "hwp",
                                 {"tables": tables, "image_hashes": image_hashes, "sections": len(sections),
                                  "border_fills": model["header"]["border_fills"],
-                                 "page_numbers": page_numbers, "page_start": page_start})
+                                 "page_numbers": page_numbers, "page_start": page_start,
+                                 "layout_model": model})
 
     @staticmethod
     def picture_hashes(model: dict, pictures: list[dict]) -> list[str]:

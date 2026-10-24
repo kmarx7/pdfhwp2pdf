@@ -37,8 +37,10 @@ function applyFormat(format) {
   $("format-flow").setAttribute("aria-label", `${name}에서 DOCX로 변환`);
   $("drop-title").textContent = `${name} 파일을 여기에 놓으세요`;
   $("upload-limit").textContent = format === "hwp" ? "HWP 5 · 최대 30 MiB · 실험 기능" : "PDF · 최대 30 MiB · 100페이지";
+  $("mode-title").textContent = format === "hwp" ? "편집용 초안 변환" : "균형 있게 변환";
+  $("mode-description").textContent = format === "hwp" ? "텍스트와 표를 편집할 수 있어요. 원본 배치 보존은 아직 미완성이에요." : "문단과 표의 구조, 원본 배치를 함께 고려해요.";
   const notes = format === "hwp"
-    ? ["HWP 5의 본문·표·이미지를 실험 지원해요.", "기본 쪽 번호를 지원해요. Word에서 필드를 업데이트해 주세요.", "암호·배포용 문서와 HWPX는 지원하지 않아요.", "머리말·수식·도형 등 미지원 요소가 있으면 중단해요.", "페이지 배치와 글꼴은 결과 확인이 필요해요."]
+    ? ["HWP 직접 변환은 편집용 초안을 만들어요. 원본 레이아웃 보존은 아직 미완성이에요.", "글꼴·줄바꿈·페이지 수가 크게 달라질 수 있어요.", "기본 쪽 번호를 지원해요. Word에서 필드를 업데이트해 주세요.", "암호·배포용 문서와 HWPX는 지원하지 않아요.", "머리말·수식·도형 등 미지원 요소가 있으면 중단해요."]
     : ["텍스트 기반 PDF를 지원해요.", "스캔 PDF와 암호화된 PDF는 지원하지 않아요.", "복잡한 표와 다단 편집은 결과 확인이 필요해요."];
   $("conversion-notes").replaceChildren(...notes.map((text) => {
     const li = document.createElement("li"); li.textContent = text; return li;
@@ -173,7 +175,8 @@ async function poll(id, token) {
     if (job.state === "succeeded") {
       setBusy(false);
       $("convert-button").disabled = true;
-      showStatus("Word 문서가 준비되었어요", "편집 가능한 텍스트와 기본 구조 검사를 통과했습니다.", "success");
+      showStatus(job.format === "hwp" ? "편집용 Word 초안이 준비되었어요" : "Word 문서가 준비되었어요",
+        job.format === "hwp" ? "텍스트·표 구조를 검사했습니다. 원본 글꼴·줄바꿈·페이지 배치 보존은 아직 미완성입니다." : "편집 가능한 텍스트와 기본 구조 검사를 통과했습니다.", "success");
       $("download-button").href = job.links.download;
       $("result-actions").hidden = false;
       $("reset-button").hidden = false;

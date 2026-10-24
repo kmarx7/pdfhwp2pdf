@@ -108,6 +108,20 @@ def make_test_hwps(folder: Path) -> dict[str, Path]:
         model_path.write_text(json.dumps(model, ensure_ascii=False))
         cli.run(["new", "--from", str(model_path), "-o", str(decorated)], work)
         results["decorated"] = decorated
+        layout = folder / "layout.hwp"
+        if layout.exists():
+            raise FileExistsError(f"Fixture already exists: {layout.name}")
+        layout_model = work / "layout-model.json"
+        cli.run(["convert", str(results["text"]), "-o", str(layout_model), "--embed-bin"], work)
+        model = json.loads(layout_model.read_text())
+        paragraphs = model["sections"][0]["paragraphs"]
+        blank = copy.deepcopy(paragraphs[-1])
+        blank["chars"] = [{"CharCtrl": 13}]
+        paragraphs.insert(-1, blank)
+        paragraphs[-1]["header"]["break_type"] = 4
+        layout_model.write_text(json.dumps(model, ensure_ascii=False))
+        cli.run(["new", "--from", str(layout_model), "-o", str(layout)], work)
+        results["layout"] = layout
         for name, source_name in (("page_numbers", "text"), ("roman_numbers", "text"),
                                   ("section_numbers", "sections"), ("inherited_numbers", "sections")):
             target = folder / f"{name}.hwp"
