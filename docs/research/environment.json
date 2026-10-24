@@ -1,0 +1,55 @@
+{
+  "checked_at": "2026-10-24T04:28:16.908171+00:00",
+  "python": "3.11.15",
+  "system": "Darwin",
+  "macos": "27.0.1",
+  "machine": "arm64",
+  "project_venv": true,
+  "python_3_11": true,
+  "packages": {
+    "PyMuPDF": {
+      "version": null,
+      "import": "missing"
+    },
+    "pdf2docx": {
+      "version": null,
+      "import": "missing"
+    },
+    "python-docx": {
+      "version": null,
+      "import": "missing"
+    },
+    "fastapi": {
+      "version": null,
+      "import": "missing"
+    },
+    "uvicorn": {
+      "version": null,
+      "import": "missing"
+    },
+    "python-multipart": {
+      "version": null,
+      "import": "missing"
+    },
+    "pytest": {
+      "version": null,
+      "import": "missing"
+    },
+    "httpx": {
+      "version": null,
+      "import": "missing"
+    },
+    "defusedxml": {
+      "version": null,
+      "import": "missing"
+    },
+    "olefile": {
+      "version": null,
+      "import": "missing"
+    }
+  },
+  "smoke": {
+    "status": "not_requested"
+  },
+  "real_document_quality_verified": false
+}

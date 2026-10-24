@@ -1,0 +1,12 @@
+# 조사용 설치 후보. 운영 lock이 아니며 로컬 호환성 검증 전이다.
+# PyMuPDF 하한 버전을 시작점으로 비교하고, 배포 전 취약점/신버전을 재검토한다.
+pdf2docx==0.5.13
+PyMuPDF==1.26.7
+python-docx==1.2.0
+fastapi
+uvicorn
+python-multipart
+pytest
+httpx
+defusedxml
+olefile
