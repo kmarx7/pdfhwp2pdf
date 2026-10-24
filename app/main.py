@@ -18,6 +18,7 @@ from app.domain.errors import DomainError
 from app.engines.pdf.pdf2docx_engine import Pdf2DocxEngine
 from app.engines.hwp.hwp_cli_engine import HwpCliEngine
 from app.services.job_service import JobService
+from app.services.desktop import can_open_downloads, open_downloads_folder
 
 FRONTEND = Path(__file__).parent / "frontend"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -108,7 +109,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"formats": {"pdf": Pdf2DocxEngine().probe() | {"ocr": False},
                             "hwp": HwpCliEngine().probe() | {"ocr": False}},
                 "limits": {"max_upload_bytes": settings.max_upload_bytes,
-                           "max_pages": settings.max_pages, "ttl_seconds": settings.ttl_seconds}}
+                           "max_pages": settings.max_pages, "ttl_seconds": settings.ttl_seconds},
+                "desktop": {"open_downloads_folder": can_open_downloads()}}
+
+    @app.post("/api/v1/desktop/open-downloads")
+    async def open_downloads(request: Request):
+        check_csrf(request)
+        if await request.body():
+            raise DomainError("INVALID_REQUEST", "폴더 열기 요청에는 경로 또는 다른 옵션을 지정할 수 없습니다.", 400)
+        await asyncio.to_thread(open_downloads_folder)
+        return {"status": "opened", "folder": "downloads"}
 
     @app.post("/api/v1/jobs", status_code=202)
     async def create_job(request: Request):

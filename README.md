@@ -11,7 +11,7 @@ Python 3.11을 사용합니다. 시스템 Python이나 다른 프로젝트 환�
 ```bash
 git clone https://github.com/kmarx7/pdfhwp2pdf.git
 cd pdfhwp2pdf
-git switch feat/hwp-page-numbers
+git switch feat/open-downloads-folder
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/install_hwp_engine.py
@@ -30,6 +30,7 @@ Node.js가 있는 환경에서는 `npm run dev`도 동일한 서버를 실행합
 2. 파일명·크기를 확인하고 **Word로 변환하기**를 누릅니다. 현재 `balanced` 모드만 제공합니다.
 3. 분석→변환→서식 정리→검증 상태를 확인합니다. 엔진의 정확한 페이지 진행률을 얻을 수 없어 가짜 백분율은 표시하지 않습니다.
 4. 성공하면 **Word 파일 다운로드**를 누릅니다. 결과 파일명은 항상 `converted.docx`입니다. 검증 정보와 경고도 확인할 수 있습니다.
+   로컬 macOS에서는 다운로드 요청 후 **다운로드 폴더 열기** 버튼이 나타납니다. Finder로 기본 `~/Downloads`를 엽니다. 브라우저의 사용자 지정 저장 경로나 저장 완료 여부는 웹앱에서 확인할 수 없으므로, 다른 위치에 저장했다면 브라우저 다운로드 목록에서 확인하세요. 다운로드를 취소해도 버튼은 나타날 수 있습니다. Linux에서는 폴더 열기 버튼을 표시하지 않습니다.
 5. 작업 취소·다른 파일 변환 시 해당 작업의 복사본과 결과를 삭제합니다. 원본 파일은 변경하지 않습니다.
 
 변환된 DOCX에 본문 `w:t`와 실제 Word 표 `w:tbl`이 존재하는지 검사합니다. 원본에서 추출한 문자의 99% 미만이 남거나 중복이 1%를 넘으면 실패시킵니다. 이 검사는 문자 집합 기반의 누락 탐지이며 읽기 순서·실제 CER·시각 유사도를 증명하지 않습니다.
@@ -52,6 +53,8 @@ node --check app/frontend/static/app.js
 ```
 
 `runtime/`과 `.tools/`는 git에서 제외합니다. PDF 검증은 [2단계 보고서](docs/STAGE2_REPORT.md), HWP 설치·테스트·브라우저 검증과 제한은 [HWP 보고서](docs/HWP_REPORT.md)를 참고하세요.
+
+다운로드 폴더 버튼의 동작·제한·77개 테스트 결과는 [다운로드 폴더 보고서](docs/DOWNLOAD_FOLDER_REPORT.md)에 기록했습니다.
 
 ## HWP 5 베타 지원
 
@@ -118,6 +121,7 @@ tests/                     # 실제 엔진 및 API 자동 테스트
 | `GET /api/v1/health` | 서버 상태 |
 | `GET /api/v1/capabilities` | PDF/HWP 엔진·제한·experimental 상태 |
 | `GET /api/v1/session` | HttpOnly 세션 쿠키와 CSRF 토큰 |
+| `POST /api/v1/desktop/open-downloads` | 로컬 macOS 기본 다운로드 폴더 열기; CSRF 필요, 경로·옵션 본문 거부 |
 | `POST /api/v1/jobs` | multipart `file`, `mode=balanced`, `ocr=off`; `X-CSRF-Token` 필요 |
 | `GET /api/v1/jobs/{uuid}` | 상태·오류·결과 링크 |
 | `GET /api/v1/jobs/{uuid}/download` | DOCX 다운로드 |

@@ -18,6 +18,7 @@ let currentJob = null;
 let engineReady = false;
 let formats = {};
 let selectedFormat = "pdf";
+let canOpenDownloads = false;
 
 function documentLabel(format) {
   return format === "hwp" ? "HWP 한글 문서" : "PDF 문서";
@@ -108,7 +109,7 @@ function showError(error) {
 }
 
 function clearStatus() {
-  for (const id of ["status-panel", "error-detail", "result-actions", "quality-detail", "warnings", "expiry", "reset-button"]) $(id).hidden = true;
+  for (const id of ["status-panel", "error-detail", "result-actions", "quality-detail", "warnings", "expiry", "reset-button", "open-downloads-button", "download-notice"]) $(id).hidden = true;
   $("quality-detail").replaceChildren();
 }
 
@@ -267,14 +268,33 @@ $("quality-button").addEventListener("click", async () => {
 $("download-button").addEventListener("click", async (event) => {
   event.preventDefault();
   if (!currentJob) return;
+  const token = generation;
   try {
     const response = await request(currentJob.links.download);
     const blob = await response.blob();
+    if (token !== generation) return;
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url; link.download = "converted.docx"; document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
+    $("open-downloads-button").hidden = !canOpenDownloads;
+    $("download-notice").textContent = canOpenDownloads
+      ? "다운로드를 요청했습니다. 폴더 열기는 기본 다운로드 폴더를 엽니다. 다른 위치로 저장했다면 브라우저 다운로드 목록에서 확인하세요."
+      : "다운로드를 요청했습니다. 브라우저의 다운로드 목록에서 저장 폴더를 열 수 있습니다.";
+    $("download-notice").hidden = false;
   } catch (error) { showError(error); }
+});
+
+$("open-downloads-button").addEventListener("click", async () => {
+  const token = generation;
+  const button = $("open-downloads-button");
+  button.disabled = true;
+  try {
+    await request("/api/v1/desktop/open-downloads", { method: "POST", headers: { "X-CSRF-Token": csrf } });
+    if (token === generation) $("download-notice").textContent = "Finder로 기본 다운로드 폴더를 열었습니다. 다른 위치로 저장했다면 브라우저 다운로드 목록에서 확인하세요.";
+  } catch (error) {
+    if (token === generation) $("download-notice").textContent = `${error.message} ${error.info?.suggestion || "브라우저 다운로드 목록에서 저장 위치를 확인하세요."}`;
+  } finally { button.disabled = false; }
 });
 
 async function initialize() {
@@ -283,6 +303,7 @@ async function initialize() {
     csrf = (await session.json()).csrf_token;
     const capabilities = await capability.json();
     formats = capabilities.formats;
+    canOpenDownloads = Boolean(capabilities.desktop?.open_downloads_folder);
     applyFormat(selectedFormat);
     setBusy(false);
     if (jobId) {
