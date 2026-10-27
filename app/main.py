@@ -17,7 +17,8 @@ from app.config import Settings
 from app.domain.errors import DomainError
 from app.engines.pdf.pdf2docx_engine import Pdf2DocxEngine
 from app.engines.hwp.hwp_cli_engine import HwpCliEngine
-from app.services.job_service import JobService
+from app.engines.hwp.hwp_pdf_engine import HwpPdfEngine
+from app.services.job_service import JobService, output_name
 from app.services.desktop import can_open_downloads, open_downloads_folder
 
 FRONTEND = Path(__file__).parent / "frontend"
@@ -27,7 +28,7 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 class LeasedDownloadResponse(StreamingResponse):
     """연결 중단·전송 지연 시에도 다운로드 lease와 열린 파일을 회수한다."""
 
-    def __init__(self, stream, key: str, service: JobService):
+    def __init__(self, stream, key: str, service: JobService, output_format="docx"):
         async def chunks():
             while data := await asyncio.to_thread(stream.read, 64 * 1024):
                 yield data
@@ -35,8 +36,9 @@ class LeasedDownloadResponse(StreamingResponse):
         self.stream = stream
         self.key = key
         self.service = service
-        super().__init__(chunks(), media_type=DOCX_MIME,
-                         headers={"Content-Disposition": 'attachment; filename="converted.docx"',
+        extension = "pdf" if output_format == "pdf" else "docx"
+        super().__init__(chunks(), media_type="application/pdf" if extension == "pdf" else DOCX_MIME,
+                         headers={"Content-Disposition": f'attachment; filename="converted.{extension}"',
                                   "Content-Length": str(stream.seek(0, 2))})
         stream.seek(0)
 
@@ -62,7 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             await service.close()
 
-    app = FastAPI(title="문서잇 PDF·HWP → Word", version="0.4.0", lifespan=lifespan,
+    app = FastAPI(title="문서잇 PDF·HWP → Word·PDF", version="0.5.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     app.state.jobs = service
     app.state.settings = settings
@@ -95,7 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/health")
     async def health():
-        return {"status": "ok", "api_version": "1", "version": "0.4.0"}
+        return {"status": "ok", "api_version": "1", "version": "0.5.0"}
 
     @app.get("/api/v1/session")
     async def session(request: Request):
@@ -108,6 +110,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def capabilities():
         return {"formats": {"pdf": Pdf2DocxEngine().probe() | {"ocr": False},
                             "hwp": HwpCliEngine().probe() | {"ocr": False}},
+                "hwp_pdf": HwpPdfEngine().probe(),
                 "limits": {"max_upload_bytes": settings.max_upload_bytes,
                            "max_pages": settings.max_pages, "ttl_seconds": settings.ttl_seconds},
                 "desktop": {"open_downloads_folder": can_open_downloads()},
@@ -128,6 +131,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if len(files) != 1 or not isinstance(files[0], UploadFile) or len(references) > 1 or any(not isinstance(item, UploadFile) for item in references) or set(form) - {"file", "reference"}:
                 raise DomainError("INVALID_REQUEST", "원본 파일 한 개와 선택한 기준 PDF 한 개만 전송하세요.")
             result = await service.create(files[0], "native_embedded", "off", references[0] if references else None)
+            return JSONResponse(result, 202, headers={"Location": result["links"]["self"]})
+
+    @app.post("/api/v1/hwp-pdf/jobs", status_code=202)
+    async def create_hwp_pdf_job(request: Request):
+        check_csrf(request)
+        async with request.form(max_files=1, max_fields=0, max_part_size=1024) as form:
+            files = form.getlist("file")
+            if len(files) != 1 or not isinstance(files[0], UploadFile) or set(form) != {"file"}:
+                raise DomainError("INVALID_REQUEST", "HWP 파일 한 개만 선택하세요.")
+            result = await service.create(files[0], "hwp_pdf", "off", output_format="pdf")
             return JSONResponse(result, 202, headers={"Location": result["links"]["self"]})
 
     @app.post("/api/v1/desktop/open-downloads")
@@ -174,13 +187,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         job = service.get(key)
         if job["state"] != "succeeded":
             raise DomainError("RESULT_NOT_READY", "다운로드할 수 있는 변환 결과가 없습니다.", 409)
-        path = service.space(key).path / "output/result.docx"
+        path = service.space(key).path / "output" / output_name(job)
         try:
             stream = path.open("rb")
         except OSError as exc:
             raise DomainError("RESULT_MISSING", "결과 파일을 찾지 못했습니다.", 410) from exc
         service.leases[key] = service.leases.get(key, 0) + 1
-        return LeasedDownloadResponse(stream, key, service)
+        return LeasedDownloadResponse(stream, key, service, job.get("output_format", "docx"))
 
     app.mount("/static", StaticFiles(directory=FRONTEND / "static"), name="static")
     return app

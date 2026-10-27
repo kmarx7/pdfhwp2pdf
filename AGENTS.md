@@ -42,6 +42,8 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 
 ## 검증과 인계
 
+- 2026-10-27 v0.5.0 최신 추가는 `docs/HWP_PDF_REPORT.md`다. `feat/desktop-launcher`의 macOS 아이콘 실행기를 포함한 `feat/hwp-pdf-conversion`에서 HWP → PDF 버튼을 제공한다. 한글 뷰어의 PDF 인쇄와 다른 `hwp-cli` 렌더러이며 native 기준 PDF를 자동 대체/등록하지 않는다. PDF 결과의 MIME·파일명·재시작 복구·수명 정책을 DOCX와 함께 유지하고 `output_format`이 없는 이전 작업은 DOCX로 취급한다.
+
 - 최신 상태는 `docs/NATIVE_WEB_REPORT.md`다. `feat/native-web-conversion` v0.4.0에서 HWP UI 기본을 `native_embedded`로 연결했다. 기준 PDF는 HWP SHA-256별 등록본 또는 사용자 첨부본이며 수동 한글 PDF 출력은 여전히 필요하다. 현재 사용자 문서는 등록본을 사용한다. 기준 PDF 미등록·본문 불충분·글꼴 미발견 때 직접 초안으로 조용히 전환하지 않는다. 아래 CLI만 제공한다는 기록은 이전 단계 이력이다.
 
 - `docs/HWP_LAYOUT_REVIEW.md`의 실제 Word 검토를 우선한다. 사용자 원본 16쪽 대비 기존 DOCX 8쪽으로 품질 미달이 확인됐다. `fix/hwp-layout-fidelity`는 레이아웃 힌트의 부분 복원이며 원본 레이아웃 보존 완료가 아니다. UI에서 HWP를 편집용 초안으로 설명한다. 구조 테스트 85개 통과를 시각 품질 합격으로 보고하지 않는다.

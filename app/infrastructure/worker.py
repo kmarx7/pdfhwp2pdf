@@ -68,16 +68,23 @@ def run(workspace: Path, max_pages: int, emit) -> None:
     else:
         analysis = DocumentAnalyzer().analyze(source, max_pages)
     emit({"stage": "converting", "pages": analysis.pages, "warnings": analysis.warnings})
+    if mode == "hwp_pdf":
+        settings = json.loads((workspace / "work/pdf-options.json").read_text())
+        analysis.engine_data["pdf_font_dirs"] = settings["font_dirs"]
     engine = ConversionDispatcher().select(analysis, options)
     result = engine.convert(conversion_source, analysis, options, workspace / "work", emit)
     emit({"stage": "postprocessing"})
-    if analysis.format == "hwp":
+    if analysis.format == "hwp" and mode != "hwp_pdf":
         from app.postprocess.hwp import HwpDocxPostProcessor
         HwpDocxPostProcessor().process(result.docx_path, analysis)
-    if mode != "native_embedded":
+    if mode not in {"native_embedded", "hwp_pdf"}:
         DocxPostProcessor().process(result.docx_path)
     emit({"stage": "validating"})
-    quality = QualityValidator().validate(result.docx_path, analysis)
+    if mode == "hwp_pdf":
+        from app.quality.pdf_validator import PdfQualityValidator
+        quality = PdfQualityValidator().validate(result.output_path, analysis, max_pages)
+    else:
+        quality = QualityValidator().validate(result.docx_path, analysis)
     if mode == "native_embedded":
         quality["route"] = "native_reference_pdf_to_docx_with_fonts"
         quality["embedded_fonts"] = analysis.engine_data["embedded_fonts"]
@@ -95,10 +102,14 @@ def run(workspace: Path, max_pages: int, emit) -> None:
     quality["fonts"] = analysis.fonts
     quality["source_format"] = source.suffix[1:]
     quality["platform"] = {"python": sys.version.split()[0], "system": sys.platform}
-    output = workspace / "output/result.docx"
-    result.docx_path.replace(output)
+    expected_format = "pdf" if mode == "hwp_pdf" else "docx"
+    if result.output_format != expected_format:
+        raise DomainError("VALIDATION_FAILED", "요청한 출력 형식과 결과가 다릅니다.")
+    output = workspace / f"output/result.{expected_format}"
+    result.output_path.replace(output)
     atomic_json(workspace / "output/quality.json", quality)
-    emit({"stage": "complete", "engine": quality["engine"], "pages": analysis.pages,
+    pages = quality["metrics"]["output_page_count"]["value"] if mode == "hwp_pdf" else analysis.pages
+    emit({"stage": "complete", "engine": quality["engine"], "pages": pages,
           "sha256": hashlib.sha256(output.read_bytes()).hexdigest(), "warnings": analysis.warnings})
 
 

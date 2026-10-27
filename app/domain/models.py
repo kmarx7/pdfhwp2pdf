@@ -22,6 +22,12 @@ class DocumentAnalysis:
 
 @dataclass(frozen=True)
 class EngineResult:
-    docx_path: Path
+    output_path: Path
     engine_id: str
     version: str
+    output_format: str = "docx"
+
+    @property
+    def docx_path(self) -> Path:
+        """기존 DOCX 엔진 호출부 호환용. 새 코드는 output_path를 사용한다."""
+        return self.output_path

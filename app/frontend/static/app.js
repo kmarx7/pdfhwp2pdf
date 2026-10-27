@@ -20,11 +20,13 @@ let formats = {};
 let selectedFormat = "pdf";
 let canOpenDownloads = false;
 let nativeAvailable = false;
+let pdfOutputAvailable = false;
+let selectedOutput = "docx";
 const selectedModes = { pdf: "balanced", hwp: "native_embedded" };
 let referenceFile = null;
 let referenceCached = false;
 
-function mode() { return selectedModes[selectedFormat]; }
+function mode() { return selectedOutput === "pdf" ? "hwp_pdf" : selectedModes[selectedFormat]; }
 
 function referenceReady() {
   return selectedFormat !== "hwp" || mode() !== "native_embedded" || referenceFile || referenceCached;
@@ -61,24 +63,36 @@ function documentLabel(format) {
 
 function applyFormat(format) {
   selectedFormat = format;
+  const outputPdf = selectedOutput === "pdf";
   engineReady = Boolean(formats[format] && formats[format].availability !== "unavailable" && (mode() !== "native_embedded" || nativeAvailable));
+  if (outputPdf) engineReady = format === "hwp" && pdfOutputAvailable;
   const name = format.toUpperCase();
   $("pdf-format").setAttribute("aria-pressed", String(format === "pdf"));
-  $("hwp-format").setAttribute("aria-pressed", String(format === "hwp"));
+  $("hwp-format").setAttribute("aria-pressed", String(format === "hwp" && !outputPdf));
+  $("hwp-pdf-format").setAttribute("aria-pressed", String(format === "hwp" && outputPdf));
   $("paper-format").textContent = name;
   $("selected-format").textContent = name;
   $("source-format").textContent = name;
   $("source-format").classList.toggle("hwp-label", format === "hwp");
-  $("format-flow").setAttribute("aria-label", `${name}에서 DOCX로 변환`);
+  $("format-flow").setAttribute("aria-label", `${name}에서 ${outputPdf ? "PDF" : "DOCX"}로 변환`);
+  $("target-format").textContent = outputPdf ? "PDF" : "DOCX";
+  $("target-format").className = `format-label ${outputPdf ? "pdf-label" : "word-label"}`;
+  $("target-description").textContent = outputPdf ? "PDF 문서" : "편집 가능한 Word";
+  $("convert-label").textContent = outputPdf ? "PDF로 변환하기" : "Word로 변환하기";
   $("drop-title").textContent = `${name} 파일을 여기에 놓으세요`;
   $("upload-limit").textContent = format === "hwp" ? "HWP 5 · 최대 30 MiB · 실험 기능" : "PDF · 최대 30 MiB · 100페이지";
   $("mode-title").textContent = format === "hwp" ? "편집용 초안 변환" : "균형 있게 변환";
   $("mode-description").textContent = format === "hwp" ? "텍스트와 표를 편집할 수 있어요. 원본 배치 보존은 아직 미완성이에요." : "문단과 표의 구조, 원본 배치를 함께 고려해요.";
-  $("native-mode-option").hidden = !nativeAvailable && format !== "hwp";
+  $("mode-heading").hidden = outputPdf;
+  $("balanced-mode-option").hidden = outputPdf;
+  $("pdf-mode-note").hidden = !outputPdf;
+  $("native-mode-option").hidden = outputPdf || (!nativeAvailable && format !== "hwp");
   $("native-mode").checked = mode() === "native_embedded";
   $("balanced-mode").checked = mode() === "balanced";
   $("reference-panel").hidden = format !== "hwp" || mode() !== "native_embedded" || currentJob?.state === "succeeded";
-  const notes = mode() === "native_embedded"
+  const notes = outputPdf
+    ? ["HWP 5 파일을 PDF로 바로 변환해요. 기준 PDF 첨부는 필요 없어요.", "한글 뷰어 출력과 다른 엔진을 사용해 글꼴·표·쪽 나눔이 달라질 수 있어요.", "본문 문자 포함률과 이미지 존재를 검사하고 누락을 감지하면 실패해요.", "암호·배포용 문서, HWPX 및 기존 미지원 요소는 지원하지 않아요."]
+    : mode() === "native_embedded"
     ? ["native-embedded와 같은 PDF 기준 변환·글꼴 포함 경로예요.", "HWP는 같은 문서의 전체 출력 PDF가 필요해요. 등록되어 있으면 자동으로 사용해요.", "원본 HWP와 기준 PDF의 본문을 대조하고, 기준 PDF 전체 페이지를 변환해요.", "글꼴 포함으로 파일이 커질 수 있고 Word 페이지 수는 달라질 수 있어요."]
     : format === "hwp"
     ? ["HWP 직접 변환은 편집용 초안을 만들어요. 원본 레이아웃 보존은 아직 미완성이에요.", "글꼴·줄바꿈·페이지 수가 크게 달라질 수 있어요.", "기본 쪽 번호를 지원해요. Word에서 필드를 업데이트해 주세요.", "암호·배포용 문서와 HWPX는 지원하지 않아요.", "머리말·수식·도형 등 미지원 요소가 있으면 중단해요."]
@@ -91,11 +105,17 @@ function applyFormat(format) {
     : `${name} 변환 엔진을 사용할 수 없습니다. 서버 설치 상태를 확인해 주세요.`;
 }
 
-async function chooseFormat(format) {
-  if (busy || selectedFormat === format) return;
-  await reset();
+async function chooseFormat(format, output = "docx") {
+  if (busy || (selectedFormat === format && selectedOutput === output)) return;
+  if (file && selectedFormat === format) {
+    await discardJob(); clearStatus();
+  } else {
+    await reset();
+  }
+  selectedOutput = output;
   applyFormat(format);
   setBusy(false);
+  await updateReferenceStatus();
 }
 
 function fileSize(bytes) {
@@ -121,6 +141,7 @@ function setBusy(value) {
   $("remove-file").disabled = value;
   $("pdf-format").disabled = value;
   $("hwp-format").disabled = value;
+  $("hwp-pdf-format").disabled = value;
   $("convert-button").disabled = value || !file || !engineReady || !referenceReady();
   $("native-mode").disabled = value || !nativeAvailable;
   $("balanced-mode").disabled = value;
@@ -174,6 +195,7 @@ async function selectFile(selected) {
   }
   await discardJob();
   file = selected;
+  if (extension === "pdf") selectedOutput = "docx";
   // 이전 직접 초안 작업을 복원했더라도 새 HWP는 선호 경로로 시작한다.
   if (extension === "hwp") selectedModes.hwp = "native_embedded";
   referenceFile = null;
@@ -229,20 +251,24 @@ async function poll(id, token) {
     const job = await (await request(`/api/v1/jobs/${id}`)).json();
     if (token !== generation || id !== jobId) return;
     currentJob = job;
-    selectedModes[job.format] = job.mode;
+    selectedOutput = job.output_format || "docx";
+    if (selectedOutput !== "pdf") selectedModes[job.format] = job.mode;
     applyFormat(job.format);
-    $("file-meta").textContent = `${documentLabel(job.format)} · ${fileSize(job.size_bytes)}${job.progress.total_pages ? ` · ${job.mode === "native_embedded" && job.format === "hwp" ? "기준 PDF " : ""}${job.progress.total_pages}쪽` : job.format === "hwp" ? " · 페이지 수는 측정하지 않음" : ""}`;
+    $("file-meta").textContent = `${documentLabel(job.format)} · ${fileSize(job.size_bytes)}${job.progress.total_pages ? ` · ${selectedOutput === "pdf" ? "출력 PDF " : job.mode === "native_embedded" && job.format === "hwp" ? "기준 PDF " : ""}${job.progress.total_pages}쪽` : job.format === "hwp" ? " · 페이지 수는 측정하지 않음" : ""}`;
     $("error-detail").hidden = true;
     if (job.state === "succeeded") {
+      const outputPdf = selectedOutput === "pdf";
       setBusy(false);
       $("convert-button").disabled = true;
-      showStatus(job.mode === "native_embedded" ? "글꼴 포함 Word 문서가 준비되었어요" : job.format === "hwp" ? "편집용 Word 초안이 준비되었어요" : "Word 문서가 준비되었어요",
-        job.mode === "native_embedded" ? "native-embedded 경로로 기준 PDF의 전체 페이지를 변환하고 본문·표 구조를 검사했습니다." : job.format === "hwp" ? "텍스트·표 구조를 검사했습니다. 원본 글꼴·줄바꿈·페이지 배치 보존은 아직 미완성입니다." : "편집 가능한 텍스트와 기본 구조 검사를 통과했습니다.", "success");
+      showStatus(outputPdf ? "PDF 문서가 준비되었어요" : job.mode === "native_embedded" ? "글꼴 포함 Word 문서가 준비되었어요" : job.format === "hwp" ? "편집용 Word 초안이 준비되었어요" : "Word 문서가 준비되었어요",
+        outputPdf ? "HWP를 PDF로 변환하고 본문 문자와 이미지 존재를 검사했습니다. 중요한 내용과 원본 배치를 확인해 주세요." : job.mode === "native_embedded" ? "native-embedded 경로로 기준 PDF의 전체 페이지를 변환하고 본문·표 구조를 검사했습니다." : job.format === "hwp" ? "텍스트·표 구조를 검사했습니다. 원본 글꼴·줄바꿈·페이지 배치 보존은 아직 미완성입니다." : "편집 가능한 텍스트와 기본 구조 검사를 통과했습니다.", "success");
       $("download-button").href = job.links.download;
+      $("download-button").download = outputPdf ? "converted.pdf" : "converted.docx";
+      $("download-label").textContent = outputPdf ? "PDF 파일 다운로드" : "Word 파일 다운로드";
       $("result-actions").hidden = false;
       $("reset-button").hidden = false;
       $("engine-notice").textContent = "다운로드 후 중요한 내용과 서식을 확인해 주세요.";
-      $("expiry").textContent = `${new Date(job.expires_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}까지 다운로드할 수 있어요. 결과 파일명: converted.docx`;
+      $("expiry").textContent = `${new Date(job.expires_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}까지 다운로드할 수 있어요. 결과 파일명: converted.${selectedOutput}`;
       $("expiry").hidden = false;
       $("warnings").replaceChildren(...job.warnings.map((text) => {
         const li = document.createElement("li"); li.textContent = text; return li;
@@ -255,7 +281,13 @@ async function poll(id, token) {
       showError({ message: job.error?.message || "작업이 종료되었습니다.", info: job.error });
       return;
     }
-    const [title, description] = messages[job.state] || ["작업을 정리하고 있어요", "잠시만 기다려 주세요."];
+    let [title, description] = messages[job.state] || ["작업을 정리하고 있어요", "잠시만 기다려 주세요."];
+    if (selectedOutput === "pdf" && job.state === "converting") {
+      title = "PDF 문서로 변환하고 있어요"; description = "HWP의 본문·표·이미지를 PDF에 출력합니다.";
+    }
+    if (selectedOutput === "pdf" && job.state === "validating") {
+      description = "생성한 PDF를 다시 열고 본문 문자 포함률과 이미지 존재를 확인합니다.";
+    }
     showStatus(title, description);
     document.querySelectorAll("#stage-list li").forEach((node, i) => {
       const index = stages.indexOf(job.stage);
@@ -281,10 +313,12 @@ async function convert() {
   const form = new FormData();
   form.append("file", file);
   const native = mode() === "native_embedded";
+  const outputPdf = selectedOutput === "pdf";
   if (native && selectedFormat === "hwp" && referenceFile) form.append("reference", referenceFile);
-  if (!native) { form.append("mode", "balanced"); form.append("ocr", "off"); }
+  if (!native && !outputPdf) { form.append("mode", "balanced"); form.append("ocr", "off"); }
   try {
-    const response = await request(native ? "/api/v1/native/jobs" : "/api/v1/jobs", { method: "POST", body: form, headers: { "X-CSRF-Token": csrf } });
+    const endpoint = outputPdf ? "/api/v1/hwp-pdf/jobs" : native ? "/api/v1/native/jobs" : "/api/v1/jobs";
+    const response = await request(endpoint, { method: "POST", body: form, headers: { "X-CSRF-Token": csrf } });
     const job = await response.json();
     jobId = job.job_id;
     sessionStorage.setItem("pdfdocx_job", jobId);
@@ -298,6 +332,7 @@ async function convert() {
 $("choose-button").addEventListener("click", () => $("file-input").click());
 $("pdf-format").addEventListener("click", () => chooseFormat("pdf"));
 $("hwp-format").addEventListener("click", () => chooseFormat("hwp"));
+$("hwp-pdf-format").addEventListener("click", () => chooseFormat("hwp", "pdf"));
 $("file-input").addEventListener("change", (event) => selectFile(event.target.files[0]));
 $("remove-file").addEventListener("click", reset);
 $("reset-button").addEventListener("click", reset);
@@ -349,7 +384,9 @@ $("quality-button").addEventListener("click", async () => {
   if (!currentJob) return;
   try {
     const report = await (await request(currentJob.links.quality)).json();
-    const details = ["확인됨: DOCX 재열기 · 텍스트 개체 · 본문 문자 보존 검사", `실제 Word 표: ${report.metrics.word_table_count.value}개`, "미검증: 실제 Word 편집 · 시각 유사도 · 복잡한 문서 품질"];
+    const details = report.output_format === "pdf"
+      ? ["확인됨: PDF 재열기 · 본문 문자 포함 검사 · 원본 이미지가 있을 때 출력 이미지 존재 검사", `출력 PDF: ${report.metrics.output_page_count.value}쪽 · 본문 문자 포함률 ${(report.metrics.character_coverage.value * 100).toFixed(1)}%`, "미검증: 원본 배치 일치 · 읽기 순서 · 모든 표·이미지의 정확한 대응"]
+      : ["확인됨: DOCX 재열기 · 텍스트 개체 · 본문 문자 보존 검사", `실제 Word 표: ${report.metrics.word_table_count.value}개`, "미검증: 실제 Word 편집 · 시각 유사도 · 복잡한 문서 품질"];
     if (report.embedded_fonts) details.splice(2, 0, `포함된 글꼴: ${report.embedded_fonts.embedded_font_count}개 · 편집 허용 플래그 확인`);
     if (report.metrics.hwp_reference_text_coverage) details.splice(2, 0, `원본 HWP → 기준 PDF 본문 문자 포함률: ${(report.metrics.hwp_reference_text_coverage.value * 100).toFixed(1)}% · 읽기 순서·시각 배치 일치율과는 달라요.`, `변환한 기준 PDF: ${report.metrics.reference_pdf_page_count.value}쪽 · Word 페이지 수는 다를 수 있어요.`);
     $("quality-detail").replaceChildren(...details.map((text) => { const p = document.createElement("p"); p.textContent = text; return p; }));
@@ -366,7 +403,7 @@ $("download-button").addEventListener("click", async (event) => {
     if (token !== generation) return;
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url; link.download = "converted.docx"; document.body.append(link); link.click(); link.remove();
+    link.href = url; link.download = currentJob.output_format === "pdf" ? "converted.pdf" : "converted.docx"; document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     $("open-downloads-button").hidden = !canOpenDownloads;
     $("download-notice").textContent = canOpenDownloads
@@ -395,6 +432,7 @@ async function initialize() {
     const capabilities = await capability.json();
     formats = capabilities.formats;
     nativeAvailable = Boolean(capabilities.native_embedded?.available);
+    pdfOutputAvailable = capabilities.hwp_pdf?.availability === "experimental";
     canOpenDownloads = Boolean(capabilities.desktop?.open_downloads_folder);
     applyFormat(selectedFormat);
     setBusy(false);

@@ -1,6 +1,8 @@
-# 문서잇 · PDF·HWP → DOCX 로컬 MVP
+# 문서잇 · PDF·HWP → Word / HWP → PDF
 
-텍스트 기반 PDF와 HWP 5 문서를 편집 가능한 Word 문서로 변환하는 한국어 웹앱입니다. PDF 페이지를 이미지로 만들어 Word에 삽입하지 않습니다. 업로드부터 변환·검증·다운로드까지 로컬 컴퓨터에서 처리합니다.
+텍스트 기반 PDF와 HWP 5 문서를 편집 가능한 Word 문서로 변환하는 한국어 웹앱입니다. HWP 5 → PDF 베타도 제공합니다. PDF 페이지를 이미지로 만들어 Word에 삽입하지 않습니다. 업로드부터 변환·검증·다운로드까지 로컬 컴퓨터에서 처리합니다.
+
+**2026-10-27 v0.5.0:** 화면에 **HWP → PDF**를 추가했습니다. 파일 선택 → **PDF로 변환하기** → **PDF 파일 다운로드** 순서로 사용합니다. 기준 PDF 없이 고정 `hwp-cli 1.3.1` 엔진으로 출력하며, 한글 뷰어의 PDF 인쇄와 다른 경로입니다. 원본 배치 보존은 보장하지 않습니다. [지원 범위·126개 테스트](docs/HWP_PDF_REPORT.md)
 
 **현재 상태: PDF MVP + HWP 5 베타 구현.** HWPX·OCR은 구현하지 않았습니다. 복잡한 실무 문서 품질과 실제 Microsoft Word 앱의 편집·렌더링은 미검증입니다. 따라서 엔진 상태는 `experimental`로 표시합니다.
 
@@ -19,7 +21,7 @@ Python 3.11을 사용합니다. 시스템 Python이나 다른 프로젝트 환�
 ```bash
 git clone https://github.com/kmarx7/pdfhwp2pdf.git
 cd pdfhwp2pdf
-git switch feat/native-web-conversion
+git switch feat/hwp-pdf-conversion
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/install_hwp_engine.py
@@ -33,6 +35,8 @@ Node.js가 있는 환경에서는 `npm run dev`도 동일한 서버를 실행합
 이번 검증 환경은 macOS 27.0.1 / Apple Silicon arm64 / Python 3.11.15입니다. 일반 pip/uv의 DNS 연결이 실패해 공식 PyPI wheel을 직접 내려받은 뒤 `.venv`에 오프라인 설치했습니다. `pip check` 및 import·변환 검사를 통과했습니다. lock은 검증 환경의 전체 패키지 버전을 고정한 파일이며 플랫폼별 wheel hash lock은 아닙니다. Linux·Docker 호환성은 아직 실행 검증하지 않았습니다.
 
 ## 사용 방법
+
+**HWP를 PDF로 저장하려면:** **HWP → PDF 베타** → HWP 파일 업로드 → **PDF로 변환하기** → **PDF 파일 다운로드**를 사용합니다. 결과명은 `converted.pdf`, MIME은 `application/pdf`이며 완료 후 1시간 보관합니다. 입력 복사본·중간 파일·실패 부분 결과 정리 정책은 Word와 같습니다. 생성 PDF를 기존 native 기준 캐시에 자동 등록하지 않습니다. PDF를 Word 변환의 기준으로 쓰려면 원본 배치를 직접 확인하세요.
 
 1. **PDF → Word / HWP → Word 베타**를 선택하고 파일 한 개를 업로드합니다. 드롭한 파일의 확장자로 선택 형식도 바뀝니다.
 2. 파일명·크기를 확인합니다. HWP의 기본은 **원본 PDF 기준 · 글꼴 포함**(`native_embedded`)입니다. 등록 PDF가 없으면 한글 뷰어에서 같은 문서의 전체 페이지를 PDF로 저장해 **기준 PDF 선택**으로 추가합니다. 기준 PDF가 준비되어야 변환 버튼이 활성화됩니다. PDF 입력 기본과 HWP의 명시적 **편집용 초안 변환**은 `balanced`입니다.
@@ -150,6 +154,7 @@ tests/                     # 실제 엔진 및 API 자동 테스트
 | `POST /api/v1/desktop/open-downloads` | 로컬 macOS 기본 다운로드 폴더 열기; CSRF 필요, 경로·옵션 본문 거부 |
 | `POST /api/v1/jobs` | multipart `file`, `mode=balanced`, `ocr=off`; `X-CSRF-Token` 필요 |
 | `POST /api/v1/native/jobs` | multipart `file`, HWP는 선택적 `reference` PDF; `native_embedded` 고정, CSRF 필요 |
+| `POST /api/v1/hwp-pdf/jobs` | multipart HWP `file` 한 개; `hwp_pdf` 모드·PDF 출력 고정, CSRF 필요 |
 | `GET /api/v1/native/references/{sha256}` | 같은 HWP의 유효한 등록 PDF 존재·쪽 수·만료 시각 조회; 로컬 경로 비공개 |
 | `GET /api/v1/jobs/{uuid}` | 상태·오류·결과 링크 |
 | `GET /api/v1/jobs/{uuid}/download` | DOCX 다운로드 |
@@ -157,6 +162,8 @@ tests/                     # 실제 엔진 및 API 자동 테스트
 | `DELETE /api/v1/jobs/{uuid}` | 취소·삭제; `X-CSRF-Token` 필요 |
 
 접수는 202로 반환하며, 이후 암호화·OCR·변환 실패는 작업 상태 `failed`와 한국어 오류로 전달합니다. 실패 작업은 다운로드할 수 없습니다.
+
+작업 응답의 `format`은 입력, `output_format`은 출력입니다. 기존 메타데이터에서 출력 필드가 없으면 DOCX로 해석하며 PDF 결과도 같은 조회·취소·다운로드·보고서 API를 사용합니다.
 
 설계 문서: [PRD](docs/PRD.md), [ARCHITECTURE](docs/ARCHITECTURE.md), [CONVERSION_SPEC](docs/CONVERSION_SPEC.md), [TEST_PLAN](docs/TEST_PLAN.md), [AGENTS](AGENTS.md).
 

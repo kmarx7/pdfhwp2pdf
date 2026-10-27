@@ -28,6 +28,10 @@ def timestamp(value: float | None) -> str | None:
     return datetime.fromtimestamp(value, timezone.utc).isoformat() if value is not None else None
 
 
+def output_name(job):
+    return "result.pdf" if job.get("output_format") == "pdf" else "result.docx"
+
+
 class JobService:
     def __init__(self, settings: Settings, clock=time.time):
         self.settings = settings
@@ -72,7 +76,7 @@ class JobService:
                 await self.reap_previous_worker(job)
                 self.finish(job, "failed", DomainError("INTERRUPTED", "서버가 종료되어 작업이 중단되었습니다."))
             elif job["state"] == "succeeded":
-                output = path / "output/result.docx"
+                output = path / "output" / output_name(job)
                 if not output.is_file() or hashlib.sha256(output.read_bytes()).hexdigest() != job.get("output_sha256"):
                     self.finish(job, "failed", DomainError("VALIDATION_FAILED", "보관된 결과의 무결성 확인에 실패했습니다."))
             self.clean_intermediates(job)
@@ -144,8 +148,8 @@ class JobService:
             job["cleanup_error"] = "CLEANUP_FAILED"
         self.persist(job)
 
-    async def create(self, upload, mode: str, ocr: str, reference=None) -> dict:
-        if mode not in {"balanced", "native_embedded"} or ocr != "off":
+    async def create(self, upload, mode: str, ocr: str, reference=None, output_format="docx") -> dict:
+        if mode not in {"balanced", "native_embedded", "hwp_pdf"} or ocr != "off" or output_format not in {"docx", "pdf"} or (mode == "hwp_pdf") != (output_format == "pdf"):
             raise DomainError("INVALID_OPTIONS", "지원하지 않는 변환 모드이거나 OCR 요청입니다.")
         # 사용자 파일명은 디스크 경로·다운로드 헤더·메타데이터로 사용하지 않는다.
         extension = Path(upload.filename or "").suffix.lower()
@@ -174,6 +178,10 @@ class JobService:
             if extension != f".{detected}":
                 raise DomainError("FORMAT_MISMATCH", "파일 확장자와 실제 문서 형식이 다릅니다.", 400)
             target.chmod(0o400)
+            if mode == "hwp_pdf":
+                if detected != "hwp":
+                    raise DomainError("INVALID_OPTIONS", "HWP → PDF는 HWP 파일만 입력할 수 있습니다.")
+                atomic_json(space.path / "work/pdf-options.json", {"font_dirs": [str(path) for path in self.settings.native_font_dirs]})
             if reference is not None and (mode != "native_embedded" or detected != "hwp"):
                 raise DomainError("INVALID_OPTIONS", "기준 PDF는 HWP의 native-embedded 변환에서만 사용합니다.")
             if mode == "native_embedded":
@@ -209,7 +217,7 @@ class JobService:
             if directory_bytes(self.root) > self.settings.max_workspace_bytes:
                 raise DomainError("RESOURCE_LIMIT", "임시 저장 공간이 부족합니다.", 503)
             job = {"job_id": job_id, "state": "queued", "stage": "waiting", "format": detected,
-                   "mode": mode, "size_bytes": size, "pages": None, "engine": None,
+                   "mode": mode, "output_format": output_format, "size_bytes": size, "pages": None, "engine": None,
                    "warnings": [], "error": None, "created_at": self.clock(), "expires_at": None}
             self.jobs[job_id] = job
             self.persist(job)
@@ -235,6 +243,7 @@ class JobService:
     def public(self, job: dict) -> dict:
         url = f'/api/v1/jobs/{job["job_id"]}'
         return {key: job[key] for key in ("job_id", "state", "stage", "format", "mode", "size_bytes", "engine", "warnings", "error")} | {
+            "output_format": job.get("output_format", "docx"),
             "progress": {"fraction": None, "completed_pages": job["pages"] if job["state"] == "succeeded" else None,
                          "total_pages": job["pages"]},
             "created_at": timestamp(job["created_at"]), "expires_at": timestamp(job.get("expires_at")),
@@ -378,7 +387,7 @@ class JobService:
             elif process.returncode != 0 or not result:
                 self.finish(job, "failed", DomainError("ENGINE_FAILED", "변환 프로세스가 정상적으로 완료되지 않았습니다."))
             else:
-                output = space.path / "output/result.docx"
+                output = space.path / "output" / output_name(job)
                 if not output.is_file() or hashlib.sha256(output.read_bytes()).hexdigest() != result["sha256"]:
                     raise DomainError("VALIDATION_FAILED", "결과 파일의 무결성 확인에 실패했습니다.")
                 job.update(engine=result["engine"], pages=result["pages"], output_sha256=result["sha256"])
