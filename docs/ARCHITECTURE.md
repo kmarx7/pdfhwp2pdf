@@ -4,6 +4,8 @@
 
 ## 1. 실행 구성
 
+프런트엔드 작업 동선: 업로드 영역 안의 `upload-actions`에 파일 선택과 변환 버튼을 인접 배치한다. 성공 시 이 입력용 버튼 묶음은 숨기고 다운로드 옆에 `new-file-button`을 표시한다. 새 파일 버튼은 동기 사용자 클릭 안에서 파일 선택창을 열고, 실제 유효한 파일 선택 시에만 기존 `selectFile`/`discardJob` 정리 흐름을 실행한다. 선택창 취소 시 현재 결과를 유지하고 같은 파일 재선택을 허용한다. 오류 후의 새 파일 버튼도 같은 동작을 사용한다. 진행 중에는 파일 선택·변환·새 파일 버튼을 비활성화한다.
+
 v0.5.0 추가: `POST /api/v1/hwp-pdf/jobs` → 기존 단일 작업 큐/worker → `HwpAnalyzer` → dispatcher의 `HwpPdfEngine` → 고정 CLI `convert --to pdf` → PDF 개인 메타데이터 정리 → `PdfQualityValidator` → `output/result.pdf`다. `EngineResult.output_path/output_format`으로 결과 형식을 표현하고 기존 `docx_path` 접근은 호환 프로퍼티로 유지한다. 작업 메타데이터 `output_format=pdf`로 다운로드 MIME/파일명·무결성·재시작 복구를 분기하며 기존 DOCX 수명과 격리를 공유한다. 출력 필드가 없는 이전 작업은 DOCX다. HWP → Word의 native 경로와 자동 연결하지 않는다.
 
 macOS `문서잇.app`은 `scripts/launch_desktop.py`를 프로젝트 `.venv`로 실행한다. 실행 파일·작업 경로·명령으로 8000번 서버의 소유권을 확인하고 준비 상태를 기다린 뒤 기본 브라우저를 연다. 없으면 기존 `run_dev.py`를 독립 세션으로 시작하며 lock으로 중복 시작을 직렬화한다. 다른 프로그램을 종료하거나 시스템 Python·로그인 항목을 변경하지 않는다. 앱 생성기는 프로젝트 경로와 문서 로고를 담은 번들을 만들고 기존 앱은 덮어쓰지 않는다.

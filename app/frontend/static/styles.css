@@ -475,6 +475,20 @@ h1>span {
   padding:13px 17px;
   font-size:13px;
 }
+.upload-actions {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+  margin-top:18px;
+}
+.upload-actions .button {
+  min-height:48px;
+}
+.upload-actions #convert-label {
+  font-size:13px;
+  font-weight:600;
+  line-height:1.4;
+}
 .convert-button>span {
   font-size:19px;
   font-weight:400;
@@ -669,6 +683,9 @@ h1>span {
 .mode-recommended {font-size:11px;margin-left:4px;color:#15715b;}
 .result-actions .button {
   padding:12px 16px;
+}
+@media(max-width:380px) {
+  .upload-actions {grid-template-columns:1fr;gap:8px;}
 }
 .quality-detail {
   margin-top:12px;

@@ -42,8 +42,7 @@
               <span class="upload-symbol">↑</span>
             </div>
             <h3 id="drop-title">PDF 파일을 여기에 놓으세요</h3>
-            <p>또는 아래 버튼으로 파일을 선택하세요</p>
-            <button id="choose-button" class="button button-secondary" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m-4 4 4-4 4 4M3 12v5h14v-5"/></svg>파일 선택</button>
+            <p>또는 아래의 파일 선택 버튼을 눌러 주세요</p>
             <span id="upload-limit" class="upload-limit">PDF · 최대 30 MiB · 100페이지</span>
           </div>
 
@@ -62,17 +61,26 @@
             <button id="reference-remove" class="text-button" type="button" hidden>PDF 선택 취소</button>
           </div>
 
+          <div id="upload-actions" class="upload-actions" role="group" aria-label="파일 선택 및 변환">
+            <button id="choose-button" class="button button-secondary" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m-4 4 4-4 4 4M3 12v5h14v-5"/></svg>파일 선택</button>
+            <button id="convert-button" class="button button-primary convert-button" type="button" disabled><span id="convert-label">Word로 변환하기</span> <span aria-hidden="true">→</span></button>
+          </div>
+          <p id="engine-notice" class="engine-notice">PDF 파일을 먼저 선택해 주세요.</p>
+          <button id="cancel-button" class="text-button cancel-button" type="button" hidden>작업 취소 및 파일 삭제</button>
+
           <div id="status-panel" class="status-panel" role="status" aria-live="polite" aria-atomic="true" hidden>
             <div class="status-heading"><span id="status-icon" class="status-icon" aria-hidden="true"></span><div><h3 id="status-title"></h3><p id="status-description"></p></div></div>
             <ol id="stage-list" class="stage-list" aria-label="변환 단계"><li data-stage="analyzing">분석</li><li data-stage="converting">변환</li><li data-stage="postprocessing">서식 정리</li><li data-stage="validating">검증</li></ol>
             <div id="activity" class="activity" aria-hidden="true"><span></span></div>
             <div id="error-detail" class="error-detail" hidden><code id="error-code"></code><p id="error-suggestion"></p></div>
-            <div id="result-actions" class="result-actions" hidden><a id="download-button" class="button button-primary" href="#" download><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M3 13v4h14v-4"/></svg><span id="download-label">Word 파일 다운로드</span></a><button id="open-downloads-button" class="button button-secondary" type="button" hidden aria-describedby="download-notice"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 6V4h6l2 2h8v10H2z"/></svg>다운로드 폴더 열기</button><button id="quality-button" class="text-button" type="button">검증 정보 보기</button></div>
+            <div id="result-actions" class="result-actions" hidden><a id="download-button" class="button button-primary" href="#" download><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M3 13v4h14v-4"/></svg><span id="download-label">Word 파일 다운로드</span></a><button id="new-file-button" class="button button-secondary" type="button">새 파일 업로드</button><button id="open-downloads-button" class="button button-secondary" type="button" hidden aria-describedby="download-notice"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 6V4h6l2 2h8v10H2z"/></svg>다운로드 폴더 열기</button><button id="quality-button" class="text-button" type="button">검증 정보 보기</button></div>
             <p id="download-notice" class="expiry" role="status" hidden></p>
             <div id="quality-detail" class="quality-detail" hidden></div>
             <ul id="warnings" class="warnings" hidden></ul>
             <p id="expiry" class="expiry" hidden></p>
           </div>
+
+          <button id="reset-button" class="text-button reset-button" type="button" hidden>새 파일 업로드</button>
 
           <div class="workspace-footer"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M9 2 3 4v5c0 4 6 7 6 7s6-3 6-7V4z"/><path d="m6 9 2 2 4-4"/></svg><span>외부 업로드 없이, 내 컴퓨터 안에서</span></div>
         </div>
@@ -85,10 +93,6 @@
           <label id="balanced-mode-option" class="mode-option"><input id="balanced-mode" type="radio" name="mode" value="balanced" checked><span><strong id="mode-title">균형 있게 변환</strong><small id="mode-description">문단과 표의 구조, 원본 배치를 함께 고려해요.</small></span><span class="selected-dot" aria-hidden="true"></span></label>
           <div id="pdf-mode-note" class="reference-panel" hidden><strong>HWP를 PDF로 출력</strong><p>본문·표·이미지를 PDF로 변환해요. 한글 뷰어 인쇄와 다른 엔진으로, 원본 배치는 결과 확인이 필요해요.</p></div>
           <div class="conversion-notes"><h3>변환 전 확인해 주세요</h3><ul id="conversion-notes"><li>텍스트 기반 PDF를 지원해요.</li><li>스캔 PDF와 암호화된 PDF는 지원하지 않아요.</li><li>복잡한 표와 다단 편집은 결과 확인이 필요해요.</li></ul></div>
-          <button id="convert-button" class="button button-primary convert-button" type="button" disabled><span id="convert-label">Word로 변환하기</span> <span aria-hidden="true">→</span></button>
-          <button id="cancel-button" class="text-button cancel-button" type="button" hidden>작업 취소 및 파일 삭제</button>
-          <button id="reset-button" class="text-button reset-button" type="button" hidden>다른 파일 변환하기</button>
-          <p id="engine-notice" class="engine-notice">PDF 파일을 먼저 선택해 주세요.</p>
         </aside>
       </section>
 

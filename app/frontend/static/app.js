@@ -136,8 +136,11 @@ async function request(url, options = {}) {
 
 function setBusy(value) {
   busy = value;
+  $("upload-actions").hidden = currentJob?.state === "succeeded";
   $("file-input").disabled = value;
   $("choose-button").disabled = value;
+  $("new-file-button").disabled = value;
+  $("reset-button").disabled = value;
   $("remove-file").disabled = value;
   $("pdf-format").disabled = value;
   $("hwp-format").disabled = value;
@@ -266,7 +269,7 @@ async function poll(id, token) {
       $("download-button").download = job.download_filename;
       $("download-label").textContent = outputPdf ? "PDF 파일 다운로드" : "Word 파일 다운로드";
       $("result-actions").hidden = false;
-      $("reset-button").hidden = false;
+      $("reset-button").hidden = true;
       $("engine-notice").textContent = "다운로드 후 중요한 내용과 서식을 확인해 주세요.";
       $("expiry").textContent = `${new Date(job.expires_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}까지 다운로드할 수 있어요. 결과 파일명: ${job.download_filename}`;
       $("expiry").hidden = false;
@@ -329,13 +332,21 @@ async function convert() {
   }
 }
 
-$("choose-button").addEventListener("click", () => $("file-input").click());
+function chooseNextFile() {
+  if (busy) return;
+  // 같은 파일을 다시 선택할 수도 있게 한다. 선택 취소 시 기존 결과는 유지한다.
+  $("file-input").value = "";
+  $("file-input").click();
+}
+
+$("choose-button").addEventListener("click", chooseNextFile);
 $("pdf-format").addEventListener("click", () => chooseFormat("pdf"));
 $("hwp-format").addEventListener("click", () => chooseFormat("hwp"));
 $("hwp-pdf-format").addEventListener("click", () => chooseFormat("hwp", "pdf"));
 $("file-input").addEventListener("change", (event) => selectFile(event.target.files[0]));
 $("remove-file").addEventListener("click", reset);
-$("reset-button").addEventListener("click", reset);
+$("reset-button").addEventListener("click", chooseNextFile);
+$("new-file-button").addEventListener("click", chooseNextFile);
 $("convert-button").addEventListener("click", convert);
 for (const id of ["native-mode", "balanced-mode"]) $(id).addEventListener("change", async event => {
   if (busy) return;
