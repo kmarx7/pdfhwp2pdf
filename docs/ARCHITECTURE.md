@@ -223,7 +223,7 @@ DocumentModel
 
 ### 다운로드·작업 접근
 
-DOCX MIME은 `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, 파일명은 고정 `converted.docx`로 `Content-Disposition: attachment` 처리한다. DOCX와 품질 응답에 `Cache-Control: no-store`, 다운로드에 `X-Content-Type-Options: nosniff`를 적용한다. 임의 경로를 API 매개변수로 받지 않는다.
+DOCX MIME은 `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, PDF는 `application/pdf`다. 사용자 요청으로 다운로드 이름은 원본의 basename을 유지하고 확장자만 출력 형식으로 바꾼다. 경로·제어/양방향 문자·금지 문자를 정리하고 NFC/UTF-8 최대 240바이트로 제한한다. 정리한 `download_filename`만 작업 메타데이터와 API에 저장/반환하며 원본 절대 경로는 보관하지 않는다. 서버 디스크는 계속 `input/source.*`, `output/result.*` 고정 경로다. 한글 이름은 `Content-Disposition: attachment`의 UTF-8 `filename*`로 전달하고 Blob 다운로드 및 화면 안내도 같은 API 값을 사용한다. 삭제/만료 tombstone에는 이름을 남기지 않는다. 이전 작업은 이름을 복구할 수 없어 `converted.docx`/`converted.pdf`로 대체한다. DOCX와 품질 응답에 `Cache-Control: no-store`, 다운로드에 `X-Content-Type-Options: nosniff`를 적용한다. 임의 경로를 API 매개변수로 받지 않는다.
 
 초기 localhost 단일 사용자 환경에서 UUID 작업 ID를 사용한다. 동일 출처 요청만 허용하고 CORS wildcard를 사용하지 않는다. Host/Origin 검사와 로컬 세션 CSRF 토큰으로 다른 사이트의 localhost 작업 생성·삭제를 제한한다. 이 구성을 멀티테넌트 인증으로 간주하지 않으며 외부 공개 전 소유권·인증 체계를 별도 구현한다.
 

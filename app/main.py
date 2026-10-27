@@ -19,6 +19,7 @@ from app.engines.pdf.pdf2docx_engine import Pdf2DocxEngine
 from app.engines.hwp.hwp_cli_engine import HwpCliEngine
 from app.engines.hwp.hwp_pdf_engine import HwpPdfEngine
 from app.services.job_service import JobService, output_name
+from app.services.filenames import content_disposition, job_download_filename
 from app.services.desktop import can_open_downloads, open_downloads_folder
 
 FRONTEND = Path(__file__).parent / "frontend"
@@ -28,7 +29,7 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 class LeasedDownloadResponse(StreamingResponse):
     """연결 중단·전송 지연 시에도 다운로드 lease와 열린 파일을 회수한다."""
 
-    def __init__(self, stream, key: str, service: JobService, output_format="docx"):
+    def __init__(self, stream, key: str, service: JobService, output_format="docx", filename=None):
         async def chunks():
             while data := await asyncio.to_thread(stream.read, 64 * 1024):
                 yield data
@@ -38,7 +39,7 @@ class LeasedDownloadResponse(StreamingResponse):
         self.service = service
         extension = "pdf" if output_format == "pdf" else "docx"
         super().__init__(chunks(), media_type="application/pdf" if extension == "pdf" else DOCX_MIME,
-                         headers={"Content-Disposition": f'attachment; filename="converted.{extension}"',
+                         headers={"Content-Disposition": content_disposition(filename or f"converted.{extension}", extension),
                                   "Content-Length": str(stream.seek(0, 2))})
         stream.seek(0)
 
@@ -193,7 +194,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except OSError as exc:
             raise DomainError("RESULT_MISSING", "결과 파일을 찾지 못했습니다.", 410) from exc
         service.leases[key] = service.leases.get(key, 0) + 1
-        return LeasedDownloadResponse(stream, key, service, job.get("output_format", "docx"))
+        return LeasedDownloadResponse(stream, key, service, job.get("output_format", "docx"), job_download_filename(job))
 
     app.mount("/static", StaticFiles(directory=FRONTEND / "static"), name="static")
     return app

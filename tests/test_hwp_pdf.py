@@ -32,7 +32,7 @@ def test_hwp_to_pdf_real_engine_download_and_cleanup(client, hwp_samples, kind):
     assert job["engine"] == {"id": "hwp-cli-pdf", "version": "1.3.1"}
     download = client.get(job["links"]["download"])
     assert download.headers["content-type"] == "application/pdf"
-    assert download.headers["content-disposition"] == 'attachment; filename="converted.pdf"'
+    assert download.headers["content-disposition"] == f'attachment; filename="{source.stem}.pdf"'
     with pymupdf.open(stream=download.content, filetype="pdf") as pdf:
         assert "한글HWP변환12345" in normalized("".join(page.get_text() for page in pdf))
         assert len(pdf) == (2 if kind == "sections" else 1)

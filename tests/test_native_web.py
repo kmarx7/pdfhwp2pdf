@@ -59,7 +59,7 @@ def test_native_pdf_real_engine_text_tables_fonts_download_and_cleanup(native_cl
     assert job["state"] == "succeeded", job
     assert job["engine"]["id"] == "native-pdf-embedded"
     download = native_client.get(job["links"]["download"])
-    assert download.headers["content-disposition"] == 'attachment; filename="converted.docx"'
+    assert download.headers["content-disposition"] == f'attachment; filename="{source.stem}.docx"'
     assert download.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     document = Document(BytesIO(download.content))
     assert "Editable PDF conversion" in "".join(p.text for p in document.paragraphs)

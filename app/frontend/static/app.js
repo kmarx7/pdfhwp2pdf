@@ -263,12 +263,12 @@ async function poll(id, token) {
       showStatus(outputPdf ? "PDF 문서가 준비되었어요" : job.mode === "native_embedded" ? "글꼴 포함 Word 문서가 준비되었어요" : job.format === "hwp" ? "편집용 Word 초안이 준비되었어요" : "Word 문서가 준비되었어요",
         outputPdf ? "HWP를 PDF로 변환하고 본문 문자와 이미지 존재를 검사했습니다. 중요한 내용과 원본 배치를 확인해 주세요." : job.mode === "native_embedded" ? "native-embedded 경로로 기준 PDF의 전체 페이지를 변환하고 본문·표 구조를 검사했습니다." : job.format === "hwp" ? "텍스트·표 구조를 검사했습니다. 원본 글꼴·줄바꿈·페이지 배치 보존은 아직 미완성입니다." : "편집 가능한 텍스트와 기본 구조 검사를 통과했습니다.", "success");
       $("download-button").href = job.links.download;
-      $("download-button").download = outputPdf ? "converted.pdf" : "converted.docx";
+      $("download-button").download = job.download_filename;
       $("download-label").textContent = outputPdf ? "PDF 파일 다운로드" : "Word 파일 다운로드";
       $("result-actions").hidden = false;
       $("reset-button").hidden = false;
       $("engine-notice").textContent = "다운로드 후 중요한 내용과 서식을 확인해 주세요.";
-      $("expiry").textContent = `${new Date(job.expires_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}까지 다운로드할 수 있어요. 결과 파일명: converted.${selectedOutput}`;
+      $("expiry").textContent = `${new Date(job.expires_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}까지 다운로드할 수 있어요. 결과 파일명: ${job.download_filename}`;
       $("expiry").hidden = false;
       $("warnings").replaceChildren(...job.warnings.map((text) => {
         const li = document.createElement("li"); li.textContent = text; return li;
@@ -403,7 +403,7 @@ $("download-button").addEventListener("click", async (event) => {
     if (token !== generation) return;
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url; link.download = currentJob.output_format === "pdf" ? "converted.pdf" : "converted.docx"; document.body.append(link); link.click(); link.remove();
+    link.href = url; link.download = currentJob.download_filename; document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     $("open-downloads-button").hidden = !canOpenDownloads;
     $("download-notice").textContent = canOpenDownloads

@@ -19,6 +19,7 @@ from app.domain.errors import DomainError
 from app.infrastructure.workspace import JobWorkspace, atomic_json, directory_bytes
 from app.services.analyzer import FileTypeDetector
 from app.services.native_references import NativeReferences
+from app.services.filenames import make_download_filename, job_download_filename
 
 TERMINAL = {"succeeded", "failed", "cancelled", "expired"}
 STAGES = {"analyzing", "converting", "postprocessing", "validating"}
@@ -151,7 +152,7 @@ class JobService:
     async def create(self, upload, mode: str, ocr: str, reference=None, output_format="docx") -> dict:
         if mode not in {"balanced", "native_embedded", "hwp_pdf"} or ocr != "off" or output_format not in {"docx", "pdf"} or (mode == "hwp_pdf") != (output_format == "pdf"):
             raise DomainError("INVALID_OPTIONS", "지원하지 않는 변환 모드이거나 OCR 요청입니다.")
-        # 사용자 파일명은 디스크 경로·다운로드 헤더·메타데이터로 사용하지 않는다.
+        # 원본 경로는 보관하지 않는다. 정리한 표시 이름만 작업 수명 동안 유지한다.
         extension = Path(upload.filename or "").suffix.lower()
         if extension not in {".pdf", ".hwp"}:
             raise DomainError("UNSUPPORTED_FORMAT", "현재 PDF와 HWP 5 파일을 지원합니다.", 415)
@@ -217,7 +218,9 @@ class JobService:
             if directory_bytes(self.root) > self.settings.max_workspace_bytes:
                 raise DomainError("RESOURCE_LIMIT", "임시 저장 공간이 부족합니다.", 503)
             job = {"job_id": job_id, "state": "queued", "stage": "waiting", "format": detected,
-                   "mode": mode, "output_format": output_format, "size_bytes": size, "pages": None, "engine": None,
+                   "mode": mode, "output_format": output_format,
+                   "download_filename": make_download_filename(upload.filename, output_format),
+                   "size_bytes": size, "pages": None, "engine": None,
                    "warnings": [], "error": None, "created_at": self.clock(), "expires_at": None}
             self.jobs[job_id] = job
             self.persist(job)
@@ -244,6 +247,7 @@ class JobService:
         url = f'/api/v1/jobs/{job["job_id"]}'
         return {key: job[key] for key in ("job_id", "state", "stage", "format", "mode", "size_bytes", "engine", "warnings", "error")} | {
             "output_format": job.get("output_format", "docx"),
+            "download_filename": job_download_filename(job),
             "progress": {"fraction": None, "completed_pages": job["pages"] if job["state"] == "succeeded" else None,
                          "total_pages": job["pages"]},
             "created_at": timestamp(job["created_at"]), "expires_at": timestamp(job.get("expires_at")),

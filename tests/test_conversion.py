@@ -23,7 +23,7 @@ def test_real_engine_creates_editable_docx(client, samples, kind):
     download = client.get(job["links"]["download"])
     assert download.status_code == 200
     assert download.headers["content-type"] == DOCX_MIME
-    assert download.headers["content-disposition"] == 'attachment; filename="converted.docx"'
+    assert download.headers["content-disposition"] == f'attachment; filename="{source.stem}.docx"'
     assert download.headers["cache-control"] == "no-store"
     assert download.headers["x-content-type-options"] == "nosniff"
     document = Document(BytesIO(download.content))
@@ -85,11 +85,13 @@ def test_bad_or_unsupported_pdf_fails_without_download(client, samples, kind, co
         assert job["error"]["details"]["pages"] == [2]
 
 
-def test_untrusted_filename_never_used_as_path_or_header(client, samples):
+def test_untrusted_filename_is_sanitized_and_never_used_as_storage_path(client, samples):
     response = submit(client, samples["text"], '../../한글"; injected.pdf')
     assert response.status_code == 202
     job = wait_job(client, response.json()["job_id"])
     download = client.get(job["links"]["download"])
-    assert download.headers["content-disposition"] == 'attachment; filename="converted.docx"'
-    meta = (client.app.state.jobs.space(job["job_id"]).path / "meta.json").read_text()
-    assert "injected" not in meta and "한글" not in meta
+    header = download.headers["content-disposition"]
+    assert "filename*=UTF-8" in header and "../" not in header and "\r" not in header and "\n" not in header
+    space = client.app.state.jobs.space(job["job_id"]).path
+    assert (space / "output/result.docx").is_file()
+    assert not any("injected" in path.name for path in space.rglob("*"))

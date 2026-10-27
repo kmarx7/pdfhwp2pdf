@@ -43,7 +43,7 @@ def test_hwp_real_engine_download_editable_objects(client, hwp_samples, kind):
     assert job["progress"]["total_pages"] is None
     download = client.get(job["links"]["download"])
     assert download.status_code == 200
-    assert download.headers["content-disposition"] == 'attachment; filename="converted.docx"'
+    assert download.headers["content-disposition"] == f'attachment; filename="{source.stem}.docx"'
     assert download.headers["content-type"].endswith("wordprocessingml.document")
     document = Document(BytesIO(download.content))
     text = "".join(node.text or "" for node in document.element.findall(".//" + qn("w:t")))
