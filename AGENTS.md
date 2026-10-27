@@ -13,6 +13,8 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 
 ## 작업 전 확인
 
+- 최신 전체 맥락은 [docs/PROJECT_HISTORY.md](docs/PROJECT_HISTORY.md)를 우선 확인한다. 단계별 보고서에는 당시의 고정 파일명·CLI만 제공 등 현재와 달라진 이력이 있으므로 README와 최신 기록을 함께 따른다.
+
 - [README.md](README.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/CONVERSION_SPEC.md](docs/CONVERSION_SPEC.md), [docs/TEST_PLAN.md](docs/TEST_PLAN.md)를 읽는다.
 - 문서의 `계획`, `공식 문서 확인`, `로컬 설치 확인`, `샘플 변환 확인`, `실문서 품질 확인`을 구분한다. 설계 트리를 이미 존재하는 코드로 설명하지 않는다.
 - 클래스·함수·파일명은 영어, 사용자 UI·설계 문서는 한국어로 작성한다.
