@@ -7,6 +7,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 from docx import Document
+from docx.enum.text import WD_LINE_SPACING
 from docx.oxml.ns import qn
 import pytest
 
@@ -330,7 +331,9 @@ def test_hwp_empty_paragraph_line_spacing_and_explicit_page_break(client, hwp_sa
     assert len(doc.paragraphs) == 4  # 구역 설정 빈 문단 + 제목 + 원본 빈 문단 + 본문
     assert doc.paragraphs[2].text == ""
     assert doc.paragraphs[-1].paragraph_format.page_break_before is True
-    assert abs(doc.paragraphs[-1].paragraph_format.line_spacing - 1.6) < 0.01
+    # HWP 160%는 글자 크기 기준이라 10pt 글자에서 16pt 고정 줄 높이다(Word 1.6배수가 아님).
+    assert abs(doc.paragraphs[-1].paragraph_format.line_spacing.pt - 16) < 0.05
+    assert doc.paragraphs[-1].paragraph_format.line_spacing_rule == WD_LINE_SPACING.EXACTLY
     assert "Editable text." in doc.paragraphs[-1].text
     # HWP 본문 영역은 상단 여백과 머리말 영역을 함께 포함한다.
     assert doc.sections[0].top_margin.mm > 18

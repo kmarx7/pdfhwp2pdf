@@ -75,8 +75,17 @@ class HwpLayoutPostProcessor:
             spacing.set(qn("w:line"), "1")
             spacing.set(qn("w:lineRule"), "exact")
         elif kind == 0 and value > 0:
-            spacing.set(qn("w:line"), str(round(value * 240 / 100)))
-            spacing.set(qn("w:lineRule"), "auto")
+            # HWP 퍼센트는 글자 크기 기준이다(12pt × 160% = 19.2pt). Word의 auto 배수는 글꼴 줄 높이
+            # (맑은 고딕 1.33배)를 다시 곱해 줄이 약 33% 커지므로 문단의 가장 큰 글자로 pt를 계산한다.
+            size = self.largest_font_pt(source)
+            if size:
+                has_picture = any("Picture" in control for control in source["controls"])
+                spacing.set(qn("w:line"), str(round(size * 20 * value / 100)))
+                # 그림이 든 문단은 고정 높이로 자르지 않는다.
+                spacing.set(qn("w:lineRule"), "atLeast" if has_picture else "exact")
+            else:
+                spacing.set(qn("w:line"), str(round(value * 240 / 100)))
+                spacing.set(qn("w:lineRule"), "auto")
         if source["header"]["break_type"] & 4:
             properties.get_or_add_pageBreakBefore().set(qn("w:val"), "true")
             self.page_breaks += 1
@@ -90,6 +99,12 @@ class HwpLayoutPostProcessor:
                 size = OxmlElement("w:sz")
                 size.set(qn("w:val"), str(max(2, round(char["base_size"] * char["rel_sizes"][0] / 5000))))
                 props.append(size)
+
+    def largest_font_pt(self, source):
+        shapes = self.model["header"]["char_shapes"]
+        sizes = [shapes[shape_id]["base_size"] * shapes[shape_id]["rel_sizes"][0] / 10000
+                 for _, shape_id in source["char_shape_runs"] if 0 <= shape_id < len(shapes)]
+        return max(sizes, default=0)
 
     def blocks(self, paragraphs, targets):
         result, cursor = [], 0
