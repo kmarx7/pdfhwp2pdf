@@ -1,0 +1,11 @@
+{
+  "name": "pdfdocx-local-runner",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Python 서버 실행용 스크립트만 제공합니다. npm 의존성은 없습니다.",
+  "scripts": {
+    "dev": ".venv/bin/python scripts/run_dev.py",
+    "dev:restart": ".venv/bin/python scripts/run_dev.py --restart",
+    "test": ".venv/bin/python -m pytest -q"
+  }
+}

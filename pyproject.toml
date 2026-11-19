@@ -1,0 +1,25 @@
+[project]
+name = "pdfdocx-local"
+version = "0.5.0"
+description = "Local editable PDF/HWP to DOCX and HWP to PDF converter"
+requires-python = ">=3.11,<3.12"
+# 운영 설치는 requirements.lock(검증 환경 전체 고정)을 사용한다.
+# 아래는 코드가 직접 import하는 패키지 목록이다.
+dependencies = [
+  "fastapi", "starlette", "uvicorn", "python-multipart",
+  "PyMuPDF==1.26.7",
+  "pdf2docx==0.5.13",
+  "python-docx==1.2.0",
+  "lxml", "defusedxml", "psutil",
+  "olefile==0.47",
+  "fonttools==4.67.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "httpx"]
+# scripts/build_desktop_app.py 아이콘 생성용
+desktop = ["Pillow"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

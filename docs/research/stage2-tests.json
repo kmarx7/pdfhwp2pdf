@@ -1,0 +1,9 @@
+{
+  "tests": 38,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "time_seconds": 6.263,
+  "checked_at": "2026-10-24T04:57:51.955584+00:00",
+  "command": ".venv/bin/python -m pytest -q --junitxml=runtime/test-results.xml"
+}

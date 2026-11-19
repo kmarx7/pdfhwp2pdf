@@ -1,8 +1,22 @@
 # 시스템 아키텍처
 
-기준일: 2026-10-24. 아래는 **구현 예정 명세**다. 현재 파일은 설계 문서와 환경 probe뿐이다. 제품 범위는 [PRD](PRD.md), 변환 정책은 [CONVERSION_SPEC](CONVERSION_SPEC.md)를 따른다.
+기준일: 2026-10-24. 아래는 1단계 아키텍처 기준 명세이며 계획·확장 구조를 포함한다. PDF 구현은 [STAGE2_REPORT](STAGE2_REPORT.md), 후속 HWP 5 베타의 실제 구조·제한은 [HWP_REPORT](HWP_REPORT.md)에 기록한다. 현재 실행 코드 구조·명령은 [README](../README.md)를 기준으로 한다. 제품 범위는 [PRD](PRD.md), 변환 정책은 [CONVERSION_SPEC](CONVERSION_SPEC.md)를 따른다.
 
 ## 1. 실행 구성
+
+프런트엔드 작업 동선: 업로드 영역 안의 `upload-actions`에 파일 선택과 변환 버튼을 인접 배치한다. 성공 시 이 입력용 버튼 묶음은 숨기고 다운로드 옆에 `new-file-button`을 표시한다. 새 파일 버튼은 동기 사용자 클릭 안에서 파일 선택창을 열고, 실제 유효한 파일 선택 시에만 기존 `selectFile`/`discardJob` 정리 흐름을 실행한다. 선택창 취소 시 현재 결과를 유지하고 같은 파일 재선택을 허용한다. 오류 후의 새 파일 버튼도 같은 동작을 사용한다. 진행 중에는 파일 선택·변환·새 파일 버튼을 비활성화한다.
+
+v0.5.0 추가: `POST /api/v1/hwp-pdf/jobs` → 기존 단일 작업 큐/worker → `HwpAnalyzer` → dispatcher의 `HwpPdfEngine` → 고정 CLI `convert --to pdf` → PDF 개인 메타데이터 정리 → `PdfQualityValidator` → `output/result.pdf`다. `EngineResult.output_path/output_format`으로 결과 형식을 표현하고 기존 `docx_path` 접근은 호환 프로퍼티로 유지한다. 작업 메타데이터 `output_format=pdf`로 다운로드 MIME/파일명·무결성·재시작 복구를 분기하며 기존 DOCX 수명과 격리를 공유한다. 출력 필드가 없는 이전 작업은 DOCX다. HWP → Word의 native 경로와 자동 연결하지 않는다.
+
+macOS `문서잇.app`은 `scripts/launch_desktop.py`를 프로젝트 `.venv`로 실행한다. 실행 파일·작업 경로·명령으로 8000번 서버의 소유권을 확인하고 준비 상태를 기다린 뒤 기본 브라우저를 연다. 없으면 기존 `run_dev.py`를 독립 세션으로 시작하며 lock으로 중복 시작을 직렬화한다. 다른 프로그램을 종료하거나 시스템 Python·로그인 항목을 변경하지 않는다. 앱 생성기는 프로젝트 경로와 문서 로고를 담은 번들을 만들고 기존 앱은 덮어쓰지 않는다.
+
+v0.4.0에서 사용자 선호 경로를 웹앱에 연결했다. 최신 구현은 [웹 경로 보고서](NATIVE_WEB_REPORT.md), 이전 CLI 단계는 [인수인계](HANDOFF.md)를 따른다. 한글 뷰어 PDF 출력 자체는 수동이다.
+
+`POST /api/v1/native/jobs` → `JobService.create(native_embedded)` → 격리 worker → `HwpAnalyzer`의 원본 본문과 `DocumentAnalyzer`의 기준 PDF 대조 → `NativeEmbeddedEngine` → `Pdf2DocxEngine` → `DocxPostProcessor` → `embed_local_fonts` → `QualityValidator` 순서다. PDF 입력의 native 모드는 HWP 대조 단계만 생략한다. 기존 HWP 직접 초안 경로는 명시적으로 선택한 `balanced`에서만 사용한다.
+
+`NativeReferences`는 별도 로컬 저장소 `runtime/native-references/<source SHA-256>/reference.pdf`와 `meta.json`을 관리한다. 등록 시 HWP/PDF 분석·본문 문자 포함률 ≥99%·무결성을 확인하고, 조회 시 PDF SHA-256을 확인한다. 전체 256 MiB/개별 30 MiB/24시간 TTL이며 만료는 조회와 시작·60초 정리에서 회수한다. 서버 중지 중 정리는 다음 실행으로 미뤄진다. 입력 HWP는 캐시에 보관하지 않는다. 첨부 PDF는 작업 input에만 복사하고 작업 종료 후 삭제한다. 캐시가 없으면 `NATIVE_REFERENCE_REQUIRED`로 중단하며 다른 경로로 대체하지 않는다.
+
+API는 기존 작업 조회·취소·다운로드·보고서·1시간 결과 TTL을 공유한다. native multipart는 원본과 기준 PDF 두 개만 허용하며 각각 30 MiB, 요청 본문은 합산 상한 +64 KiB를 적용한다. native 글꼴 디렉터리는 서버 설정에서만 전달하고 API 임의 경로를 받지 않는다. 원본 HWP와 기준 PDF 입력 복사본 해시를 변환 전후 대조한다.
 
 ```mermaid
 flowchart TD
@@ -12,7 +26,7 @@ flowchart TD
     Queue --> Analyzer[Document Analyzer]
     Analyzer --> Dispatcher[Conversion Dispatcher / EngineRegistry]
     Dispatcher --> PDF[PDF Conversion Engine]
-    Dispatcher --> HWP[HWP Conversion Engine: 비활성]
+    Dispatcher --> HWP[HWP Conversion Engine: hwp-cli 베타]
     Dispatcher --> HWPX[HWPX Conversion Engine: 비활성]
     PDF --> OCR[OCR Processor: 필요 시 후속]
     PDF --> Post[DOCX Post Processor]
@@ -37,7 +51,7 @@ flowchart TD
 | Document Analyzer | `DocumentAnalyzer.analyze`, `FileTypeDetector.detect` | 파일 판별, PDF 페이지별 분석, 보호·손상·지원 요소 확인 |
 | Conversion Dispatcher | `ConversionDispatcher.select`, `EngineRegistry.probe` | 형식·모드·환경별 후보 선택, 미지원·누락 의존성 구분 |
 | PDF Conversion Engine | `Pdf2DocxEngine` | `pdf2docx` 호출·결과 어댑트; 후보, 미구현 |
-| HWP Conversion Engine | 향후 `OnlyOfficeHwpEngine` 또는 `HwpModelEngine` | 검증 후에만 등록; 현재 구현 없음 |
+| HWP Conversion Engine | `HwpCliEngine`, `HwpAnalyzer`, `HwpDocxPostProcessor` | 고정 native CLI + OLE/지원 요소 분석 + 표 후처리·결과 검증. `.tools`가 없으면 unavailable |
 | HWPX Conversion Engine | 향후 `HwpxModelEngine` 또는 `OnlyOfficeHwpxEngine` | XML→공통 모델 또는 외부 엔진 경로; 현재 구현 없음 |
 | OCR Processor | `OCRProcessor` Protocol, 향후 `TesseractOCRProcessor` | 페이지 단위 텍스트·bbox·confidence 제공; 기본 비활성 |
 | DOCX Post Processor | `DocxPostProcessor.process`, `FontResolver.resolve` | section·한글 글꼴·스타일·관계 보정, 손실 경고 |
@@ -48,7 +62,7 @@ flowchart TD
 
 ## 3. 예정 폴더 구조
 
-아래 트리 중 `app/`, `tests/`, `runtime/`, `pyproject.toml`, `requirements.lock`, `Dockerfile`은 **아직 생성하지 않았다**. `.venv/`, `scripts/probe_environment.py`, 조사용 의존성 목록과 문서는 현재 존재한다.
+아래 트리는 최종 확장을 포함한 설계 목표다. API는 `app/main.py`, 작업 큐·저장·정리는 `app/services/job_service.py`에 통합했다. 후속 HWP 코드는 `engines/hwp/`, `services/hwp_analyzer.py`, `postprocess/hwp.py`에 추가했다. HWPX/OCR·렌더러·Dockerfile은 만들지 않았다. 실제 구조는 README와 HWP 보고서를 참고한다.
 
 ```text
 .
@@ -211,7 +225,7 @@ DocumentModel
 
 ### 다운로드·작업 접근
 
-DOCX MIME은 `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, 파일명은 고정 `converted.docx`로 `Content-Disposition: attachment` 처리한다. DOCX와 품질 응답에 `Cache-Control: no-store`, 다운로드에 `X-Content-Type-Options: nosniff`를 적용한다. 임의 경로를 API 매개변수로 받지 않는다.
+DOCX MIME은 `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, PDF는 `application/pdf`다. 사용자 요청으로 다운로드 이름은 원본의 basename을 유지하고 확장자만 출력 형식으로 바꾼다. 경로·제어/양방향 문자·금지 문자를 정리하고 NFC/UTF-8 최대 240바이트로 제한한다. 정리한 `download_filename`만 작업 메타데이터와 API에 저장/반환하며 원본 절대 경로는 보관하지 않는다. 서버 디스크는 계속 `input/source.*`, `output/result.*` 고정 경로다. 한글 이름은 `Content-Disposition: attachment`의 UTF-8 `filename*`로 전달하고 Blob 다운로드 및 화면 안내도 같은 API 값을 사용한다. 삭제/만료 tombstone에는 이름을 남기지 않는다. 이전 작업은 이름을 복구할 수 없어 `converted.docx`/`converted.pdf`로 대체한다. DOCX와 품질 응답에 `Cache-Control: no-store`, 다운로드에 `X-Content-Type-Options: nosniff`를 적용한다. 임의 경로를 API 매개변수로 받지 않는다.
 
 초기 localhost 단일 사용자 환경에서 UUID 작업 ID를 사용한다. 동일 출처 요청만 허용하고 CORS wildcard를 사용하지 않는다. Host/Origin 검사와 로컬 세션 CSRF 토큰으로 다른 사이트의 localhost 작업 생성·삭제를 제한한다. 이 구성을 멀티테넌트 인증으로 간주하지 않으며 외부 공개 전 소유권·인증 체계를 별도 구현한다.
 

@@ -1,12 +1,18 @@
-# 조사용 설치 후보. 운영 lock이 아니며 로컬 호환성 검증 전이다.
-# PyMuPDF 하한 버전을 시작점으로 비교하고, 배포 전 취약점/신버전을 재검토한다.
+# 조사용 설치 후보. 운영 lock이 아니다. 설치는 requirements.lock을 사용한다.
+# 새 버전 조사 시 이 목록으로 설치해 pip check·pytest·smoke를 통과한 뒤 lock을 갱신한다.
+# 배포 전 취약점/신버전을 재검토한다.
 pdf2docx==0.5.13
 PyMuPDF==1.26.7
 python-docx==1.2.0
+fonttools==4.67.0
+olefile==0.47
 fastapi
+starlette
 uvicorn
 python-multipart
+lxml
+defusedxml
+psutil
+Pillow
 pytest
 httpx
-defusedxml
-olefile
