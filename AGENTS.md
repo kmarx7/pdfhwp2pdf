@@ -2,13 +2,14 @@
 
 ## 목적과 현재 단계
 
-PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이지 전체를 이미지로 삽입하는 방식과 숨은 텍스트로 편집 가능성을 가장하는 방식은 금지한다. PDF MVP와 사용자 후속 요청에 따른 HWP 5 베타를 구현했다. 실제 Word 편집·실문서 품질 관문은 미완료다. 현재 구현 상태는 [README.md](README.md), [docs/STAGE2_REPORT.md](docs/STAGE2_REPORT.md), [docs/HWP_REPORT.md](docs/HWP_REPORT.md)를 우선 확인한다. HWPX는 현재 구현하지 않았다.
+PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이지 전체를 이미지로 삽입하는 방식과 숨은 텍스트로 편집 가능성을 가장하는 방식은 금지한다. PDF MVP와 사용자 후속 요청에 따른 HWP 5 → DOCX 베타, HWP 5 → PDF 베타(v0.5.0)를 구현했다. 실제 Word 편집·실문서 품질 관문은 미완료다. 현재 구현 상태는 [README.md](README.md), [docs/PROJECT_HISTORY.md](docs/PROJECT_HISTORY.md), [docs/HWP_PDF_REPORT.md](docs/HWP_PDF_REPORT.md)를 우선 확인한다. 이전 단계는 [docs/STAGE2_REPORT.md](docs/STAGE2_REPORT.md), [docs/HWP_REPORT.md](docs/HWP_REPORT.md)를 참고한다. HWPX는 현재 구현하지 않았다.
 
 ## Git 작업 방식
 
 - 사용자 지정 원격 저장소는 `https://github.com/kmarx7/pdfhwp2pdf.git`이다.
 - 사용자는 구현·테스트 후 커밋·푸시를 요청했다. 기능이 달라지는 작업은 별도 브랜치에서 진행한다. PDF는 `feat/pdf-docx-mvp`, HWP 추가는 `feat/hwp-docx`다.
 - HWP 쪽 번호 추가는 `feat/hwp-page-numbers`다. `services/hwp_page_numbers.py`의 제한된 pgnp 해석과 후처리·필드 검증을 함께 유지한다. 본문 중간 설정을 구역 전체 설정으로 조용히 바꾸지 않는다.
+- 이후 원본 파일명 유지는 `feat/preserve-download-filenames`, 업로드·변환 버튼 배치와 다음 파일 선택은 `feat/upload-convert-actions`다. 최신 기능이 모두 포함된 브랜치는 `feat/upload-convert-actions`이며 main 병합·배포는 하지 않았다.
 - 원격 변경을 먼저 확인하며 강제 푸시·사용자 커밋 덮어쓰기를 하지 않는다. `.venv`, runtime, 사용자 문서·비밀 정보는 커밋하지 않는다.
 
 ## 작업 전 확인
@@ -22,7 +23,8 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 ## 환경과 의존성
 
 - 프로젝트 `.venv`의 Python 3.11을 사용한다. 시스템 Python, 전역 pip, 다른 프로젝트 환경을 변경하지 않는다. sudo·전역 설치·자동 Homebrew 설치를 하지 않는다.
-- 패키지 설치 성공을 import/버전 확인 및 최소 smoke로 검증한다. `requirements-probe.txt`는 운영 lock이 아니다. 검증된 의존성과 전이 버전을 lock하고 플랫폼별 차이를 기록한다.
+- 패키지 설치 성공을 import/버전 확인 및 최소 smoke로 검증한다. 설치 기준은 `requirements.lock`(검증 환경 전체 고정)이며 `requirements-probe.txt`는 조사용 후보다. `pyproject.toml`에는 직접 import하는 패키지를 모두 선언한다. 의존성 변경 시 세 파일과 lock 머리말의 검증 환경·테스트 결과를 함께 갱신하고 플랫폼별 차이를 기록한다.
+- `package.json`은 Python 서버 실행·테스트용 스크립트만 둔다. npm 의존성·프런트엔드 빌드를 추가하지 않는다. 버전은 `pyproject.toml`·`app/main.py`와 일치시킨다.
 - 클라우드 서비스, 유료 API, 데이터베이스, 새 외부 인프라는 사용자 승인 없이 추가하지 않는다. 로컬 엔진도 패키지·시스템 앱 설치 범위와 자원 비용을 명확히 한다.
 - PyMuPDF·pyhwp·ONLYOFFICE 등 라이선스를 각 버전/의존성별로 기록한다. `pdf2docx`의 MIT를 전이 의존성 전체 라이선스로 취급하지 않는다.
 - HWP 엔진은 `hwp-cli 1.3.1` macOS arm64 배포물을 `.tools/`에 고정 설치한다. 실행 파일 무결성 검사를 유지하고 전역 설치·자동 업데이트를 하지 않는다. 고정 버전의 `--strict`는 DOCX 손실을 검사하지 않으므로 자체 미지원 요소·표·이미지 검증을 제거하지 않는다.
@@ -54,6 +56,7 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 - 후속 사용자 평가는 `native-embedded` 후보가 원본과 비슷하게 잘 나왔다는 것이다. 후속 개선은 이 한글 뷰어 PDF 경유 + 글꼴 포함 후보를 기준으로 우선한다. 현재 Word 18쪽/원본 16쪽, 약 52MB이며 앱의 자동 HWP 경로에는 아직 연결되지 않았다. 사용자의 긍정 평가를 전체 후보 일괄 실패라는 이전 판단으로 덮어쓰지 않는다.
 - 2026-10-25 단계 마무리 상태는 `docs/HANDOFF.md`를 우선 확인한다. `feat/native-pdf-docx-workflow`에서 선호 경로를 `scripts/convert_reference_pdf.py`와 로컬 글꼴 포함 모듈로 정식화했다. 전체 97개 테스트 통과, 실제 기준 후보와 본문 XML·글꼴 연결 데이터 동일함을 확인했다. PDF 출력은 수동, 후속 처리는 CLI이며 웹앱 자동 HWP 경로는 아니다. 글꼴 플래그 거부와 기존 출력/원본 보존을 유지한다.
 
+- 2026-10-27 최신 결과는 142 passed, 6 warnings(실패·skip 없음)다.
 - 기능 구현 후 `.venv/bin/python -m pytest`로 변경 범위에 맞는 테스트를 실행한다. 설치·실행 불가라면 명령·원인·미실행 범위를 기록한다. skip은 pass가 아니다.
 - 실제 샘플이 없으면 품질을 검증했다고 쓰지 않는다. 합성 smoke, OOXML 구조 검사, Word 수동 편집, 시각 비교를 별도로 기록한다.
 - 기능·API·지원 범위 변경과 함께 명세를 갱신한다. 완료 보고에 변경 내용, 검증 명령·결과, 남은 한계, 다음 단계 명세를 남긴다.

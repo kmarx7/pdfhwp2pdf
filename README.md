@@ -32,7 +32,7 @@ python3.11 -m venv .venv
 
 브라우저에서 **http://127.0.0.1:8000** 을 엽니다. 이 작업 폴더에는 이미 `.venv`와 의존성이 설치되어 있으므로 마지막 서버 명령만 실행하면 됩니다. 서버를 이미 실행 중이면 중복 실행하지 않습니다. 종료는 서버 터미널의 `Ctrl+C`입니다.
 
-Node.js가 있는 환경에서는 `npm run dev`도 동일한 서버를 실행합니다. 코드 갱신 후에는 `npm run dev -- --restart`로 이 프로젝트의 서버만 확인해 재시작할 수 있습니다. npm 패키지 설치나 프런트엔드 빌드는 필요하지 않습니다. 작업 저장소는 단일 서버 프로세스로만 사용할 수 있습니다. `--workers 2`나 외부 주소 바인딩은 지원하지 않습니다.
+Node.js가 있는 환경에서는 `npm run dev`도 동일한 서버를 실행합니다. 코드 갱신 후에는 `npm run dev:restart`(또는 `npm run dev -- --restart`)로 이 프로젝트의 서버만 확인해 재시작할 수 있습니다. npm 패키지 설치나 프런트엔드 빌드는 필요하지 않습니다. 작업 저장소는 단일 서버 프로세스로만 사용할 수 있습니다. `--workers 2`나 외부 주소 바인딩은 지원하지 않습니다.
 
 이번 검증 환경은 macOS 27.0.1 / Apple Silicon arm64 / Python 3.11.15입니다. 일반 pip/uv의 DNS 연결이 실패해 공식 PyPI wheel을 직접 내려받은 뒤 `.venv`에 오프라인 설치했습니다. `pip check` 및 import·변환 검사를 통과했습니다. lock은 검증 환경의 전체 패키지 버전을 고정한 파일이며 플랫폼별 wheel hash lock은 아닙니다. Linux·Docker 호환성은 아직 실행 검증하지 않았습니다.
 
@@ -64,8 +64,10 @@ Node.js가 있는 환경에서는 `npm run dev`도 동일한 서버를 실행합
 
 기본 검색 위치는 설치된 한글 뷰어의 TTF 폴더와 사용자 `~/Library/Fonts`입니다. 글꼴을 새로 설치하지 않으며, 문서에 쓰인 글꼴을 찾지 못하거나 편집용 포함 플래그를 확인할 수 없으면 실패합니다. 글꼴 전체를 포함해 출력이 커질 수 있습니다. 기존 결과는 덮어쓰지 않고 `.quality.json` 보고서를 함께 저장합니다. 실제 페이지 배치 보존을 자동으로 합격 처리하지 않습니다. [로컬 경로 명세](docs/NATIVE_PDF_WORKFLOW.md)
 
+현재 브랜치 최신 결과: **142 passed, 6 warnings**(Starlette httpx·SWIG 관련 경고, 실패·skip 없음). 자동 테스트 통과는 실제 Word 시각 품질 합격이 아닙니다.
+
 ```bash
-.venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -q   # 또는 npm test
 .venv/bin/python -m pip check
 .venv/bin/python scripts/probe_environment.py --smoke
 node --check app/frontend/static/app.js
@@ -113,8 +115,8 @@ HWP의 정확한 페이지 나눔·부유 배치·이미지 회전/자르기·�
 
 - 파일 최대 30 MiB, PDF 최대 100쪽(HWP는 페이지 수를 추정하지 않음), 변환 동시 1개·대기 최대 5개입니다.
 - 작업당 180초, 작업 프로세스 RSS 1 GiB, 전체 작업 폴더 1 GiB를 상한으로 감시합니다. RSS 감시는 50ms 간격의 최선 노력 제한이며 Linux cgroup 같은 강제 격리는 아닙니다.
-- 업로드 복사본은 `runtime/jobs/<uuid>/input/`에 읽기 전용으로 보관합니다. 작업 종료 후 입력·중간 파일을 삭제하고, 실패 시 부분 DOCX도 삭제합니다.
-- 성공 DOCX·품질 보고서는 완료 후 1시간 보관합니다. 조회·다운로드로 연장하지 않습니다. 만료 시 즉시 접근을 차단하고 60초 간격으로 정리합니다.
+- 업로드 복사본은 `runtime/jobs/<uuid>/input/`에 읽기 전용으로 보관합니다. 작업 종료 후 입력·중간 파일을 삭제하고, 실패 시 부분 결과(DOCX/PDF)도 삭제합니다.
+- 성공 DOCX/PDF·품질 보고서는 완료 후 1시간 보관합니다. 조회·다운로드로 연장하지 않습니다. 만료 시 즉시 접근을 차단하고 60초 간격으로 정리합니다.
 - 등록 기준 PDF는 별도 `runtime/native-references/<HWP SHA-256>/`에 24시간, 전체 256 MiB까지 보관합니다. 조회·사용으로 연장하지 않고 서버 시작/정리 주기에 삭제합니다. 첨부 PDF는 해당 작업 종료 후 삭제하며 자동 등록하지 않습니다. HWP/PDF 각각 30 MiB, 기준 PDF 100쪽 제한이며, 글꼴 포함 결과는 업로드 제한보다 클 수 있습니다.
 - 다운로드 중에는 최대 60초 동안 삭제를 보류합니다. 삭제·만료 후에는 내용 없는 tombstone을 24시간 보관해 410 응답을 구분합니다.
 - **서버가 꺼져 있으면 정리 작업도 멈추며, 남은 파일은 다음 실행 때 정리합니다.** 일반 파일 삭제이며 저장장치 보안 소거를 보장하지 않습니다.
@@ -136,15 +138,16 @@ HWP의 정확한 페이지 나눔·부유 배치·이미지 회전/자르기·�
 app/
   main.py                  # FastAPI · API · 다운로드 · lifespan
   api/security.py          # 본문 크기 · Host/Origin · CSRF
-  services/                # PDF 분석 · 엔진 선택 · 작업 큐/저장소/정리
+  services/                # PDF/HWP 분석 · 엔진 선택 · 작업 큐/저장소/정리 · 파일명 · 기준 PDF 등록 · 쪽 번호
   engines/base.py          # 교체 가능한 변환 인터페이스
   engines/pdf/             # Pdf2DocxEngine
   engines/hwp/             # 고정된 hwp-cli 실행·무결성 검사·변환 어댑터
   infrastructure/          # 격리 worker · 안전한 작업 경로
-  postprocess/             # 문서 속성·HWP 표 너비/기본 테두리·배경 후처리
+  postprocess/             # 문서 속성·HWP 표/레이아웃·배경 후처리 · 글꼴 포함
   quality/                 # DOCX 텍스트·표·문자 보존 검사
   frontend/                # 한국어 HTML/CSS/JavaScript
-scripts/                   # 환경 probe · 합성 PDF/HWP 생성 · HWP 엔진 설치
+scripts/                   # 환경 probe · 합성 PDF/HWP 생성 · HWP 엔진 설치 · 기준 PDF 변환/등록 · 실행 앱 생성
+packaging/                 # macOS 실행 앱 오류 안내 AppleScript
 tests/                     # 실제 엔진 및 API 자동 테스트
 ```
 
@@ -159,7 +162,7 @@ tests/                     # 실제 엔진 및 API 자동 테스트
 | `POST /api/v1/hwp-pdf/jobs` | multipart HWP `file` 한 개; `hwp_pdf` 모드·PDF 출력 고정, CSRF 필요 |
 | `GET /api/v1/native/references/{sha256}` | 같은 HWP의 유효한 등록 PDF 존재·쪽 수·만료 시각 조회; 로컬 경로 비공개 |
 | `GET /api/v1/jobs/{uuid}` | 상태·오류·결과 링크 |
-| `GET /api/v1/jobs/{uuid}/download` | DOCX 다운로드 |
+| `GET /api/v1/jobs/{uuid}/download` | 결과 다운로드(DOCX 또는 PDF, 원본 이름 기반 UTF-8 파일명) |
 | `GET /api/v1/jobs/{uuid}/quality` | 구조 검증 보고서 |
 | `DELETE /api/v1/jobs/{uuid}` | 취소·삭제; `X-CSRF-Token` 필요 |
 
