@@ -63,9 +63,17 @@
 
           <div id="upload-actions" class="upload-actions" role="group" aria-label="파일 선택 및 변환">
             <button id="choose-button" class="button button-secondary" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m-4 4 4-4 4 4M3 12v5h14v-5"/></svg>파일 선택</button>
-            <button id="convert-button" class="button button-primary convert-button" type="button" disabled><span id="convert-label">Word로 변환하기</span> <span aria-hidden="true">→</span></button>
+            <button id="convert-button" class="button button-primary convert-button" type="button" disabled aria-describedby="engine-notice reference-blocker-text"><span id="convert-label">Word로 변환하기</span> <span aria-hidden="true">→</span></button>
           </div>
-          <p id="engine-notice" class="engine-notice">PDF 파일을 먼저 선택해 주세요.</p>
+          <p id="engine-notice" class="engine-notice" role="status">PDF 파일을 먼저 선택해 주세요.</p>
+          <div id="reference-blocker" class="reference-blocker" role="status" hidden>
+            <p id="reference-blocker-text"><strong>기준 PDF가 없어서 아직 변환할 수 없어요.</strong> 같은 문서를 한글 뷰어에서 전체 PDF로 저장해 추가하거나, 편집용 초안 방식으로 바꿔 주세요.</p>
+            <div class="reference-blocker-actions">
+              <button id="blocker-reference" class="button button-secondary" type="button">기준 PDF 선택</button>
+              <button id="blocker-draft" class="text-button" type="button">편집용 초안으로 바꾸기</button>
+            </div>
+            <small>편집용 초안은 기준 PDF 없이 변환하지만 쪽 수·배치가 원본과 크게 달라질 수 있어요.</small>
+          </div>
           <button id="cancel-button" class="text-button cancel-button" type="button" hidden>작업 취소 및 파일 삭제</button>
 
           <div id="status-panel" class="status-panel" role="status" aria-live="polite" aria-atomic="true" hidden>

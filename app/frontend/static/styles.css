@@ -677,6 +677,14 @@ h1>span {
 .reference-panel {margin-top:18px;padding:18px;border:1px solid var(--line);border-radius:12px;background:#f6faf7;font-size:13px;line-height:1.7;}
 .reference-panel p {margin:8px 0 12px;color:#60766b;}
 #reference-name {display:block;overflow-wrap:anywhere;margin-top:8px;}
+/* 변환 버튼이 꺼진 이유와 다음 행동을 버튼 바로 아래에 보여 준다. */
+.reference-blocker {margin-top:12px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--tint);color:var(--ink);font-size:13px;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere;}
+.reference-blocker p {margin:0;text-wrap:pretty;}
+.reference-blocker strong {display:block;margin-bottom:2px;font-weight:600;}
+.reference-blocker-actions {display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-top:12px;}
+.reference-blocker-actions .button {min-height:44px;}
+.reference-blocker-actions .text-button {min-height:44px;}
+.reference-blocker small {display:block;margin-top:8px;color:#60766b;font-size:12px;}
 .mode-option + .mode-option {margin-top:10px;}
 .mode-option:has(input:not(:checked)) {background:#fff;border-color:var(--line);}
 .mode-option:has(input:not(:checked)) .selected-dot {opacity:0;}

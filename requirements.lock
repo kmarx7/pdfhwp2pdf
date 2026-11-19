@@ -1,5 +1,5 @@
 # 검증 환경 전체 고정: macOS 27.0.1 / Apple Silicon arm64 / Python 3.11.15
-# pip check 통과, pytest 147개 통과(2026-11-20). 플랫폼별 wheel hash lock이 아니다.
+# pip check 통과, pytest 149개 통과(2026-11-20). 플랫폼별 wheel hash lock이 아니다.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
