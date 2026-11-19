@@ -9,7 +9,7 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 - 사용자 지정 원격 저장소는 `https://github.com/kmarx7/pdfhwp2pdf.git`이다.
 - 사용자는 구현·테스트 후 커밋·푸시를 요청했다. 기능이 달라지는 작업은 별도 브랜치에서 진행한다. PDF는 `feat/pdf-docx-mvp`, HWP 추가는 `feat/hwp-docx`다.
 - HWP 쪽 번호 추가는 `feat/hwp-page-numbers`다. `services/hwp_page_numbers.py`의 제한된 pgnp 해석과 후처리·필드 검증을 함께 유지한다. 본문 중간 설정을 구역 전체 설정으로 조용히 바꾸지 않는다.
-- 이후 원본 파일명 유지는 `feat/preserve-download-filenames`, 업로드·변환 버튼 배치와 다음 파일 선택은 `feat/upload-convert-actions`다. 최신 기능이 모두 포함된 브랜치는 `feat/upload-convert-actions`이며 main 병합·배포는 하지 않았다.
+- 이후 원본 파일명 유지는 `feat/preserve-download-filenames`, 업로드·변환 버튼 배치와 다음 파일 선택은 `feat/upload-convert-actions`다. 이 기능 브랜치들은 2026-11-20 PR #1로 `main`에 병합했다(병합 커밋 `688a955`). 이후 작업은 `main`에서 새 브랜치를 만들어 진행한다. 공개 배포는 하지 않았다.
 - 원격 변경을 먼저 확인하며 강제 푸시·사용자 커밋 덮어쓰기를 하지 않는다. `.venv`, runtime, 사용자 문서·비밀 정보는 커밋하지 않는다.
 
 ## 작업 전 확인
@@ -24,7 +24,7 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 
 - 프로젝트 `.venv`의 Python 3.11을 사용한다. 시스템 Python, 전역 pip, 다른 프로젝트 환경을 변경하지 않는다. sudo·전역 설치·자동 Homebrew 설치를 하지 않는다.
 - 패키지 설치 성공을 import/버전 확인 및 최소 smoke로 검증한다. 설치 기준은 `requirements.lock`(검증 환경 전체 고정)이며 `requirements-probe.txt`는 조사용 후보다. `pyproject.toml`에는 직접 import하는 패키지를 모두 선언한다. 의존성 변경 시 세 파일과 lock 머리말의 검증 환경·테스트 결과를 함께 갱신하고 플랫폼별 차이를 기록한다.
-- `package.json`은 Python 서버 실행·테스트용 스크립트만 둔다. npm 의존성·프런트엔드 빌드를 추가하지 않는다. 버전은 `pyproject.toml`·`app/main.py`와 일치시킨다.
+- `package.json`은 Python 서버 실행·테스트용 스크립트만 둔다. npm 의존성·프런트엔드 빌드를 추가하지 않는다. 버전은 `app/config.py`의 `APP_VERSION` 한 곳에서 관리하고 `pyproject.toml`·`package.json`과 일치시킨다(`tests/test_version.py`).
 - 클라우드 서비스, 유료 API, 데이터베이스, 새 외부 인프라는 사용자 승인 없이 추가하지 않는다. 로컬 엔진도 패키지·시스템 앱 설치 범위와 자원 비용을 명확히 한다.
 - PyMuPDF·pyhwp·ONLYOFFICE 등 라이선스를 각 버전/의존성별로 기록한다. `pdf2docx`의 MIT를 전이 의존성 전체 라이선스로 취급하지 않는다.
 - HWP 엔진은 `hwp-cli 1.3.1` macOS arm64 배포물을 `.tools/`에 고정 설치한다. 실행 파일 무결성 검사를 유지하고 전역 설치·자동 업데이트를 하지 않는다. 고정 버전의 `--strict`는 DOCX 손실을 검사하지 않으므로 자체 미지원 요소·표·이미지 검증을 제거하지 않는다.

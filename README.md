@@ -23,12 +23,13 @@ Python 3.11을 사용합니다. 시스템 Python이나 다른 프로젝트 환�
 ```bash
 git clone https://github.com/kmarx7/pdfhwp2pdf.git
 cd pdfhwp2pdf
-git switch feat/upload-convert-actions
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/install_hwp_engine.py
 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --no-access-log
 ```
+
+`main` 브랜치(기본 브랜치)에 v0.5.0 전체 기능이 들어 있어 별도 브랜치로 전환할 필요가 없습니다. 이미 받아 둔 저장소는 `git switch main && git pull`로 갱신합니다. `scripts/install_hwp_engine.py`는 macOS Apple Silicon(arm64)만 지원하며 다른 환경에서는 안내 문구와 함께 중단됩니다. 이때는 이 단계를 건너뛰고 서버를 실행하면 PDF 기능만 사용할 수 있습니다.
 
 브라우저에서 **http://127.0.0.1:8000** 을 엽니다. 이 작업 폴더에는 이미 `.venv`와 의존성이 설치되어 있으므로 마지막 서버 명령만 실행하면 됩니다. 서버를 이미 실행 중이면 중복 실행하지 않습니다. 종료는 서버 터미널의 `Ctrl+C`입니다.
 
