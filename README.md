@@ -64,7 +64,7 @@ Node.js가 있는 환경에서는 `npm run dev`도 동일한 서버를 실행합
 
 기본 검색 위치는 설치된 한글 뷰어의 TTF 폴더와 사용자 `~/Library/Fonts`입니다. 글꼴을 새로 설치하지 않으며, 문서에 쓰인 글꼴을 찾지 못하거나 편집용 포함 플래그를 확인할 수 없으면 실패합니다. 글꼴 전체를 포함해 출력이 커질 수 있습니다. 기존 결과는 덮어쓰지 않고 `.quality.json` 보고서를 함께 저장합니다. 실제 페이지 배치 보존을 자동으로 합격 처리하지 않습니다. [로컬 경로 명세](docs/NATIVE_PDF_WORKFLOW.md)
 
-현재 브랜치 최신 결과(2026-11-20): **144 passed, 6 warnings**(Starlette httpx·SWIG 관련 경고, skip 없음). 7회 실행 중 1회 HWP 변환 작업 1건이 `failed`로 끝나는 간헐 실패가 있었고 원인은 미확인입니다. 자동 테스트 통과는 실제 Word 시각 품질 합격이 아닙니다.
+현재 브랜치 최신 결과(2026-11-20): **147 passed, 6 warnings**(Starlette httpx·SWIG 관련 경고, 실패·skip 없음). 이전의 간헐 실패(HWP 작업이 `failed`로 끝남)는 작업 폴더 용량 감시 `directory_bytes`가 worker가 지우거나 옮긴 파일의 크기를 읽다가 `FileNotFoundError`를 내던 경합이 원인이었고 수정했습니다(수정 후 전체 10회 연속 통과). 자동 테스트 통과는 실제 Word 시각 품질 합격이 아닙니다.
 
 ```bash
 .venv/bin/python -m pytest -q   # 또는 npm test

@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 from uuid import UUID
 
 
@@ -48,5 +49,19 @@ class JobWorkspace:
 
 
 def directory_bytes(root: Path) -> int:
-    return sum(path.stat().st_size for path in root.rglob("*")
-               if path.is_file() and not path.is_symlink())
+    """일반 파일 크기 합. 감시 중 worker가 지우거나 옮긴 파일·폴더는 건너뛴다.
+
+    작업 실행 중 50ms마다 호출되므로 목록 확인과 크기 조회 사이에 파일이 사라질 수 있다.
+    이 경합을 오류로 올리면 정상 작업이 INTERNAL_ERROR로 실패한다.
+    """
+    total = 0
+    # os.walk는 사라진 폴더의 scandir 오류를 기본적으로 무시하고 심볼릭 링크 폴더를 따라가지 않는다.
+    for directory, _folders, files in os.walk(root, followlinks=False):
+        for name in files:
+            try:
+                info = os.lstat(os.path.join(directory, name))
+            except FileNotFoundError:
+                continue
+            if stat.S_ISREG(info.st_mode):
+                total += info.st_size
+    return total
