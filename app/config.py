@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# pyproject.toml·package.json과 일치해야 한다(tests/test_version.py).
+APP_VERSION = "0.5.0"
 
 
 @dataclass(frozen=True)

@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException
 from starlette.datastructures import UploadFile
 
 from app.api.security import LocalSecurityMiddleware, check_csrf
-from app.config import Settings
+from app.config import APP_VERSION, Settings
 from app.domain.errors import DomainError
 from app.engines.pdf.pdf2docx_engine import Pdf2DocxEngine
 from app.engines.hwp.hwp_cli_engine import HwpCliEngine
@@ -65,7 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             await service.close()
 
-    app = FastAPI(title="문서잇 PDF·HWP → Word·PDF", version="0.5.0", lifespan=lifespan,
+    app = FastAPI(title="문서잇 PDF·HWP → Word·PDF", version=APP_VERSION, lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     app.state.jobs = service
     app.state.settings = settings
@@ -98,7 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/health")
     async def health():
-        return {"status": "ok", "api_version": "1", "version": "0.5.0"}
+        return {"status": "ok", "api_version": "1", "version": APP_VERSION}
 
     @app.get("/api/v1/session")
     async def session(request: Request):

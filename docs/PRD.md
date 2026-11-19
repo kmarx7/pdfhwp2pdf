@@ -1,8 +1,10 @@
 # 제품 요구사항 정의서
 
-기준일: 2026-10-24. 상태: PDF MVP와 사용자 후속 요청의 HWP 5 베타 구현. 아래 제품 요구·실문서 품질 관문은 유지하며, 실제 증거는 [STAGE2_REPORT](STAGE2_REPORT.md) 및 [HWP_REPORT](HWP_REPORT.md)에서 구분합니다. HWP 추가를 먼저 진행했으며 5개 실문서·Word 수동 편집의 최종 품질 관문까지 완료한 것은 아닙니다. 기술 조사 근거와 한계의 기준 문서는 [CONVERSION_SPEC](CONVERSION_SPEC.md)입니다.
+기준일: 2026-10-24, 최종 갱신 2026-10-27(v0.5.0). 상태: PDF MVP와 사용자 후속 요청의 HWP 5 → Word 베타, HWP 5 → PDF 베타 구현. 아래 제품 요구·실문서 품질 관문은 유지하며, 실제 증거는 [STAGE2_REPORT](STAGE2_REPORT.md) 및 [HWP_REPORT](HWP_REPORT.md)에서 구분합니다. HWP 추가를 먼저 진행했으며 5개 실문서·Word 수동 편집의 최종 품질 관문까지 완료한 것은 아닙니다. 기술 조사 근거와 한계의 기준 문서는 [CONVERSION_SPEC](CONVERSION_SPEC.md)입니다.
 
 ## 1. 목표와 사용자
+
+2026-10-27 v0.5.0 후속 범위: HWP 5 → PDF 베타를 별도 버튼으로 제공한다. 고정 `hwp-cli 1.3.1` 렌더러 결과이며 한글 뷰어 PDF 인쇄본과 다르므로 원본 배치 보존을 약속하지 않고 native 기준 PDF로 자동 등록하지 않는다. 모든 결과의 다운로드 이름은 원본 basename에 출력 확장자(`.docx`/`.pdf`)를 붙이며 정리된 표시 이름만 작업 수명 동안 보관한다. 완료 후 **새 파일 업로드**로 페이지를 새로 고치지 않고 다음 파일을 변환한다. 증거는 [HWP PDF 보고서](HWP_PDF_REPORT.md)와 [프로젝트 기록](PROJECT_HISTORY.md)을 따른다.
 
 2026-10-25 v0.4.0 후속 범위: 사용자 선호 `native-embedded`를 웹 HWP 기본 모드로 제공한다. 같은 HWP의 한글 전체 출력 PDF를 등록/첨부하고 로컬 글꼴을 포함한다. 기준 PDF가 없으면 필요 이유를 표시하며 직접 초안으로 자동 전환하지 않는다. 한글 PDF 출력 수동 단계와 Word 전 페이지 품질 관문은 남아 있다. 현재 증거는 [웹 경로 보고서](NATIVE_WEB_REPORT.md)를 우선한다.
 
