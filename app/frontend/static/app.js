@@ -26,6 +26,8 @@ const selectedModes = { pdf: "balanced", hwp: "native_embedded" };
 let referenceFile = null;
 let referenceCached = false;
 let referenceChecking = false;
+// 기준 PDF가 없어 화면에 알리고 편집용 초안을 고른 상태. 사용자가 직접 모드를 고르면 해제한다.
+let autoDraft = false;
 
 function mode() { return selectedOutput === "pdf" ? "hwp_pdf" : selectedModes[selectedFormat]; }
 
@@ -33,7 +35,8 @@ function referenceReady() {
   return selectedFormat !== "hwp" || mode() !== "native_embedded" || referenceFile || referenceCached;
 }
 
-async function updateReferenceStatus() {
+// fallbackToDraft는 파일을 새로 올렸을 때만 켠다. 사용자가 직접 글꼴 포함 방식을 고르면 초안으로 바꾸지 않는다.
+async function updateReferenceStatus({ fallbackToDraft = false } = {}) {
   // 이전 확인이 중간에 끝났더라도 "확인 중" 상태가 남지 않게 한다.
   referenceChecking = false;
   if (!file || selectedFormat !== "hwp" || mode() !== "native_embedded") return;
@@ -54,11 +57,25 @@ async function updateReferenceStatus() {
     referenceCached = status.available;
     $("reference-status").textContent = status.available
       ? `이 HWP의 기준 PDF ${status.pages}쪽이 등록되어 있어요. 파일을 추가하지 않고 native-embedded로 변환할 수 있어요. 등록 시점부터 24시간 동안 보관해요.`
-      : "등록된 기준 PDF가 없어요. 한글 뷰어에서 원본 전체를 PDF로 저장한 뒤 선택하세요. 초안 변환으로 자동 전환하지 않아요.";
+      : "등록된 기준 PDF가 없어요. 한글 뷰어에서 원본 전체를 PDF로 저장한 뒤 선택하세요.";
+    if (!status.available && fallbackToDraft) useDraftForMissingReference("missing");
   } catch {
-    if (token === generation) $("reference-status").textContent = "등록 PDF를 확인하지 못했어요. 원본의 기준 PDF를 직접 선택하거나 서버 연결을 확인하세요.";
+    if (token === generation) {
+      $("reference-status").textContent = "등록 PDF를 확인하지 못했어요. 원본의 기준 PDF를 직접 선택하거나 서버 연결을 확인하세요.";
+      if (fallbackToDraft && mode() === "native_embedded" && !referenceFile) useDraftForMissingReference("unchecked");
+    }
   }
   if (token === generation) { referenceChecking = false; setBusy(busy); }
+}
+
+// 화면에 이유를 표시한 채 편집용 초안을 고른다. 변환은 사용자가 버튼을 눌러야 시작한다.
+function useDraftForMissingReference(reason) {
+  selectedModes.hwp = "balanced";
+  autoDraft = true;
+  $("auto-draft-reason").textContent = reason === "unchecked"
+    ? "등록된 기준 PDF를 확인하지 못해 편집용 초안 방식을 골랐어요."
+    : "이 HWP에 등록된 기준 PDF가 없어 편집용 초안 방식을 골랐어요.";
+  applyFormat(selectedFormat);
 }
 
 function documentLabel(format) {
@@ -111,8 +128,10 @@ function updateEngineNotice() {
   const name = selectedFormat.toUpperCase();
   const needsReference = Boolean(file) && engineReady && !referenceReady();
   const blocked = needsReference && !referenceChecking && !busy && currentJob?.state !== "succeeded";
+  const draftChosen = autoDraft && Boolean(file) && engineReady && selectedFormat === "hwp" && mode() === "balanced" && !busy && !currentJob;
   $("reference-blocker").hidden = !blocked;
-  $("engine-notice").hidden = blocked;
+  $("auto-draft-notice").hidden = !draftChosen;
+  $("engine-notice").hidden = blocked || draftChosen;
   // 막힌 이유와 같은 내용을 두 곳에 보이지 않게, 기준 PDF가 없을 때는 버튼 아래 안내만 남긴다.
   $("reference-panel").hidden = blocked || selectedFormat !== "hwp" || mode() !== "native_embedded" || currentJob?.state === "succeeded";
   $("engine-notice").textContent = !engineReady
@@ -173,6 +192,7 @@ function setBusy(value) {
   $("cancel-button").hidden = !value || !jobId;
   $("blocker-reference").disabled = value || !file;
   $("blocker-draft").disabled = value;
+  $("auto-draft-reference").disabled = value || !file;
   updateEngineNotice();
 }
 
@@ -223,6 +243,7 @@ async function selectFile(selected) {
   if (extension === "pdf") selectedOutput = "docx";
   // 이전 직접 초안 작업을 복원했더라도 새 HWP는 선호 경로로 시작한다.
   if (extension === "hwp") selectedModes.hwp = "native_embedded";
+  autoDraft = false;
   referenceFile = null;
   referenceCached = false;
   $("reference-input").value = "";
@@ -236,7 +257,7 @@ async function selectFile(selected) {
   $("file-name").title = selected.name;
   $("file-meta").textContent = `${documentLabel(extension)} · ${fileSize(selected.size)}`;
   setBusy(false);
-  await updateReferenceStatus();
+  await updateReferenceStatus({ fallbackToDraft: true });
 }
 
 async function discardJob() {
@@ -255,6 +276,7 @@ async function discardJob() {
 async function reset() {
   await discardJob();
   selectedModes.hwp = "native_embedded";
+  autoDraft = false;
   file = null;
   referenceFile = null;
   referenceCached = false;
@@ -374,11 +396,13 @@ async function switchMode(selected) {
   if (busy) return;
   await discardJob(); clearStatus();
   selectedModes[selectedFormat] = selected;
+  autoDraft = false;
   applyFormat(selectedFormat); setBusy(false);
   await updateReferenceStatus();
 }
 for (const id of ["native-mode", "balanced-mode"]) $(id).addEventListener("change", event => switchMode(event.target.value));
 $("blocker-reference").addEventListener("click", () => $("reference-input").click());
+$("auto-draft-reference").addEventListener("click", () => $("reference-input").click());
 // 사용자가 직접 고른 경우에만 초안 방식으로 바꾼다. 변환은 버튼을 다시 눌러야 시작된다.
 $("blocker-draft").addEventListener("click", async () => {
   await switchMode("balanced");
@@ -392,6 +416,13 @@ $("reference-input").addEventListener("change", async event => {
     $("reference-status").textContent = "비어 있지 않은 30 MiB 이하 PDF를 선택하세요."; return;
   }
   referenceFile = selected;
+  if (selectedFormat === "hwp" && mode() !== "native_embedded") {
+    // 초안으로 골라 둔 상태에서 기준 PDF를 추가하면 원본에 가까운 글꼴 포함 방식으로 돌아간다.
+    await discardJob(); clearStatus();
+    selectedModes.hwp = "native_embedded";
+    autoDraft = false;
+    applyFormat(selectedFormat);
+  }
   $("reference-name").textContent = selected.name;
   $("reference-remove").hidden = false;
   await updateReferenceStatus(); setBusy(false);
