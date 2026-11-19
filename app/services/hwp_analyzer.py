@@ -29,6 +29,16 @@ FEATURE_LABELS = {
 }
 
 
+# 셀 LIST_HEADER 속성의 '안 여백 지정' 비트(HWPX hasMargin). 꺼져 있으면 표의 안 여백을 쓴다.
+CELL_OWN_MARGIN = 0x10000
+
+
+def effective_cell_margins(cell: dict, table: dict) -> list[int]:
+    if cell.get("list_attr", 0) & CELL_OWN_MARGIN or "inner_margins" not in table:
+        return list(cell["margins"])
+    return list(table["inner_margins"])
+
+
 def guard_hwp_container(source: Path) -> None:
     """실제 HWP5 식별·보호 플래그·파서에 넘기기 전 압축 크기 제한."""
     try:
@@ -173,7 +183,8 @@ class HwpAnalyzer:
                                         raise DomainError("INVALID_DOCUMENT", "HWP 표에 겹치는 셀이 있습니다.", 400)
                                     occupied.add((y, x))
                         tables.append({"rows": table["rows"], "cols": table["cols"], "cells": [
-                            {key: cell[key] for key in ("row", "col", "row_span", "col_span", "width", "border_fill", "margins")}
+                            {**{key: cell[key] for key in ("row", "col", "row_span", "col_span", "width", "border_fill")},
+                             "margins": effective_cell_margins(cell, table)}
                             for cell in table["cells"]]})
                         for cell in table["cells"]:
                             walk(cell["paragraphs"], depth + 1)
