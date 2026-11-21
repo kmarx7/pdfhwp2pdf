@@ -86,6 +86,7 @@ class HwpLayoutPostProcessor:
             else:
                 spacing.set(qn("w:line"), str(round(value * 240 / 100)))
                 spacing.set(qn("w:lineRule"), "auto")
+        self.indentation(properties, shape)
         if source["header"]["break_type"] & 4:
             properties.get_or_add_pageBreakBefore().set(qn("w:val"), "true")
             self.page_breaks += 1
@@ -99,6 +100,39 @@ class HwpLayoutPostProcessor:
                 size = OxmlElement("w:sz")
                 size.set(qn("w:val"), str(max(2, round(char["base_size"] * char["rel_sizes"][0] / 5000))))
                 props.append(size)
+
+    @staticmethod
+    def indentation(properties, shape):
+        """HWP 문단 여백·들여쓰기를 Word 단위(엔진과 같은 1/10 비율)로 다시 쓴다.
+
+        HWP 내어쓰기(음수)는 첫 줄을 왼쪽 여백에 두고 둘째 줄부터 들인다. Word hanging은
+        첫 줄을 left - hanging에 두므로 left에 내어쓰기 폭을 더해야 첫 줄이 표 칸 밖으로 나가지 않는다.
+        """
+        if "indent" not in shape:
+            return
+        left = round(shape.get("margin_left", 0) / 10)
+        right = round(shape.get("margin_right", 0) / 10)
+        indent = round(shape["indent"] / 10)
+        for old in properties.findall(qn("w:ind")):
+            properties.remove(old)
+        if not (left or right or indent):
+            return
+        ind = OxmlElement("w:ind")
+        if indent < 0:
+            ind.set(qn("w:left"), str(left - indent))
+            ind.set(qn("w:right"), str(right))
+            ind.set(qn("w:hanging"), str(-indent))
+        else:
+            ind.set(qn("w:left"), str(left))
+            ind.set(qn("w:right"), str(right))
+            if indent:
+                ind.set(qn("w:firstLine"), str(indent))
+        # pPr 자식 순서(spacing 다음 ind)를 지킨다.
+        spacing = properties.find(qn("w:spacing"))
+        if spacing is not None:
+            spacing.addnext(ind)
+        else:
+            properties.append(ind)
 
     def largest_font_pt(self, source):
         shapes = self.model["header"]["char_shapes"]
