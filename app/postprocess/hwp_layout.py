@@ -3,6 +3,7 @@ import unicodedata
 
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.enum.section import WD_ORIENT
 from docx.shared import Pt
 
 from app.domain.errors import DomainError
@@ -48,9 +49,23 @@ class HwpLayoutPostProcessor:
             raise DomainError("VALIDATION_FAILED", "본문 구역과 원본 배치 정보를 대응하지 못했습니다.")
         replacement = []
         for index, (source, chunk) in enumerate(zip(model["sections"], chunks)):
+            page = self.section_page(source)
+            self.body_height = self.body_height_of(page) if page else None
+            starts, fillers = self.filler_page_starts(source["paragraphs"])
+            self.page_starts = {id(source["paragraphs"][index]) for index in starts}
+            self.fillers = {id(source["paragraphs"][index]) for index in fillers}
             replacement.extend(self.blocks(source["paragraphs"], chunk))
+            self.page_starts, self.fillers = set(), set()
             if index < len(boundaries):
                 replacement.append(boundaries[index])
+        if replacement and replacement[-1].tag == qn("w:tbl"):
+            # Word는 표로 끝나는 문서 뒤에 기본 크기 문단을 덧붙여 쪽 끝 표 뒤에 빈 쪽을 만든다.
+            closing = OxmlElement("w:p")
+            spacing = OxmlElement("w:spacing")
+            for name, value in (("w:before", "0"), ("w:after", "0"), ("w:line", "1"), ("w:lineRule", "exact")):
+                spacing.set(qn(name), value)
+            closing.get_or_add_pPr().append(spacing)
+            replacement.append(closing)
         end = body.find(qn("w:sectPr"))
         for child in list(body):
             if child is not end:
@@ -58,13 +73,44 @@ class HwpLayoutPostProcessor:
         for index, child in enumerate(replacement):
             body.insert(index, child)
         for section, source in zip(document.sections, model["sections"]):
-            page = next((c["SectionDef"].get("page") for p in source["paragraphs"] for c in p["controls"] if "SectionDef" in c), None)
+            page = self.section_page(source)
             if page:
-                section.top_margin = Pt((page["margin_top"] + page["margin_header"]) / 100)
-                section.bottom_margin = Pt((page["margin_bottom"] + page["margin_footer"]) / 100)
+                self.apply_page(section, page)
+        self.disable_east_asian_autospace(document)
         return {"restored_empty_paragraphs": self.restored_empty, "explicit_page_breaks": self.page_breaks}
 
-    def paragraph(self, target, source, anchor=False):
+    @staticmethod
+    def filler_page_starts(paragraphs):
+        """빈 줄로 위치를 맞춘 뒤 한글이 새 쪽을 시작한 문단과, 앞 쪽 아래에 남은 빈 줄을 찾는다.
+
+        빈 문단은 한 줄이라 쪽을 넘겨 이어지지 않으므로, 빈 문단 다음에 v_pos가 줄면 그 문단이
+        원본의 쪽 시작임이 확실하다. 글꼴 대체로 Word 내용이 조금만 길어도 빈 줄이 다음 쪽으로
+        넘어가 표지가 밀리므로, 쪽 시작을 명시하고 보이지 않는 앞 쪽 빈 줄은 높이를 최소로 둔다.
+        """
+        def empty(paragraph):
+            return not paragraph["controls"] and not any("Text" in char for char in paragraph["chars"])
+
+        starts, fillers = set(), set()
+        for index in range(1, len(paragraphs)):
+            previous, current = paragraphs[index - 1], paragraphs[index]
+            if not (previous.get("line_segs") and current.get("line_segs")) or not empty(previous):
+                continue
+            if current["header"]["break_type"] & 4 or any("Table" in c for c in current["controls"]):
+                continue
+            if current["line_segs"][0]["v_pos"] < previous["line_segs"][-1]["v_pos"]:
+                starts.add(index)
+                back = index - 1
+                while back >= 0 and empty(paragraphs[back]) and back not in starts:
+                    fillers.add(back)
+                    back -= 1
+        return starts, fillers
+
+    def paragraph(self, target, source, anchor=False, page_start=None, filler=None):
+        if page_start is None:
+            page_start = id(source) in getattr(self, "page_starts", ())
+        if filler is None:
+            filler = id(source) in getattr(self, "fillers", ())
+        anchor = anchor or filler
         properties = target.get_or_add_pPr()
         shape = self.model["header"]["para_shapes"][source["para_shape"]]
         spacing = properties.get_or_add_spacing()
@@ -87,7 +133,7 @@ class HwpLayoutPostProcessor:
                 spacing.set(qn("w:line"), str(round(value * 240 / 100)))
                 spacing.set(qn("w:lineRule"), "auto")
         self.indentation(properties, shape)
-        if source["header"]["break_type"] & 4:
+        if source["header"]["break_type"] & 4 or page_start:
             properties.get_or_add_pageBreakBefore().set(qn("w:val"), "true")
             self.page_breaks += 1
         if not target.findall(".//" + qn("w:t")) and not anchor:
@@ -166,11 +212,65 @@ class HwpLayoutPostProcessor:
                 target = targets[cursor]
                 cursor += 1
                 self.table(target, table)
+                if result and result[-1].tag == qn("w:tbl"):
+                    # Word는 사이에 문단이 없는 두 표를 하나로 합친다. 높이 없는 구분 문단으로 나눠 둔다.
+                    separator = OxmlElement("w:p")
+                    self.paragraph(separator, source, anchor=True, page_start=False, filler=False)
+                    result.append(separator)
                 result.append(target)
         for extra in targets[cursor:]:
             if extra.tag != qn("w:p") or len(extra):
                 raise DomainError("VALIDATION_FAILED", "대응하지 못한 Word 문서 개체가 남았습니다.")
         return result
+
+    @staticmethod
+    def disable_east_asian_autospace(document):
+        """한글은 한글·영숫자 사이에 자동 간격을 넣지 않는다. Word 기본값은 넣어 줄이 넘친다."""
+        styles = document.styles.element
+        defaults = styles.find(qn("w:docDefaults"))
+        if defaults is None:
+            defaults = OxmlElement("w:docDefaults")
+            styles.insert(0, defaults)
+        paragraph_default = defaults.find(qn("w:pPrDefault"))
+        if paragraph_default is None:
+            paragraph_default = OxmlElement("w:pPrDefault")
+            defaults.append(paragraph_default)
+        properties = paragraph_default.find(qn("w:pPr"))
+        if properties is None:
+            properties = OxmlElement("w:pPr")
+            paragraph_default.append(properties)
+        for name in ("w:autoSpaceDE", "w:autoSpaceDN"):
+            for old in properties.findall(qn(name)):
+                properties.remove(old)
+            element = OxmlElement(name)
+            element.set(qn("w:val"), "0")
+            properties.append(element)
+
+    @staticmethod
+    def section_page(source):
+        return next((c["SectionDef"].get("page") for p in source["paragraphs"] for c in p["controls"] if "SectionDef" in c), None)
+
+    @staticmethod
+    def landscape(page) -> bool:
+        # HWP 용지 속성 bit0 = 가로. 치수는 세로 기준으로 저장된다.
+        return bool(page.get("attr", 0) & 1)
+
+    @classmethod
+    def body_height_of(cls, page) -> int:
+        """본문이 들어갈 수 있는 세로 높이(HWPUNIT)."""
+        height = min(page["width"], page["height"]) if cls.landscape(page) else page["height"]
+        return height - page["margin_top"] - page["margin_bottom"] - page["margin_header"] - page["margin_footer"]
+
+    @classmethod
+    def apply_page(cls, section, page):
+        section.top_margin = Pt((page["margin_top"] + page["margin_header"]) / 100)
+        section.bottom_margin = Pt((page["margin_bottom"] + page["margin_footer"]) / 100)
+        short, long = sorted((page["width"], page["height"]))
+        landscape = cls.landscape(page)
+        # Word는 pgSz 너비·높이를 그대로 쓰므로 가로 용지는 값을 바꿔야 실제 가로 쪽이 된다.
+        section.orientation = WD_ORIENT.LANDSCAPE if landscape else WD_ORIENT.PORTRAIT
+        section.page_width = Pt((long if landscape else short) / 100)
+        section.page_height = Pt((short if landscape else long) / 100)
 
     def table(self, target, source):
         origins = {(cell["row"], cell["col"]): cell for cell in source["cells"]}
@@ -180,6 +280,9 @@ class HwpLayoutPostProcessor:
                 properties = row.get_or_add_trPr()
                 for old in properties.findall(qn("w:trHeight")):
                     properties.remove(old)
+            limit = getattr(self, "body_height", None)
+            # 한 쪽보다 큰 높이는 여러 쪽에 걸친 행의 합계다. 최소 높이로 쓰면 Word가 행을 다음 쪽으로 민다.
+            if heights and not (limit and max(heights) > limit):
                 height = OxmlElement("w:trHeight")
                 height.set(qn("w:val"), str(max(1, round(max(heights) / 5))))
                 height.set(qn("w:hRule"), "atLeast")

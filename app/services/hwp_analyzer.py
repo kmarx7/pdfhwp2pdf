@@ -200,7 +200,10 @@ class HwpAnalyzer:
                     if "SectionDef" in control:
                         page = control["SectionDef"].get("page")
                         if page:
-                            sizes.append((page["width"] / 100, page["height"] / 100))
+                            short, long = sorted((page["width"], page["height"]))
+                            # 용지 속성 bit0 = 가로. 세로 치수로 저장되므로 실제 쪽 방향으로 기록한다.
+                            sizes.append((long / 100, short / 100) if page.get("attr", 0) & 1
+                                         else (page["width"] / 100, page["height"] / 100))
                     elif "Table" in control:
                         table = control["Table"]
                         if not 0 < table["rows"] <= 1000 or not 0 < table["cols"] <= 100:
