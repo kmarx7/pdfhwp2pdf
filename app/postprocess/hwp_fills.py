@@ -8,6 +8,9 @@ def colorref(value: int) -> str:
 
 def resolve_fill(fill: dict) -> dict:
     kind = fill.get("fill_type", 0)
+    if kind == 2 and not fill.get("hatch") and isinstance(fill.get("approx_color"), int):
+        # 그림 채우기: 분석기가 이미지의 주된 색을 계산해 둔 경우에만 단색으로 근사한다.
+        return {"background": colorref(fill["approx_color"]), "approximation": "picture_fill_dominant_color"}
     if kind not in (0, 1, 4) or fill.get("hatch"):
         raise DomainError("UNSUPPORTED_FEATURE", "그림·무늬 또는 복합 채우기 표 배경은 아직 지원하지 않습니다.",
                           suggestion="다른 파일로 시도하거나 원본의 표 배경을 확인하세요. 같은 파일 재시도로 해결되지 않습니다.")

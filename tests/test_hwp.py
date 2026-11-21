@@ -114,7 +114,7 @@ def test_hwp_protection_and_unsupported_features_fail_without_output(client, hwp
     assert not (client.app.state.jobs.space(job["job_id"]).path / "output").exists()
 
 
-@pytest.mark.parametrize(("control", "label"), [("pghd", "쪽 감추기"), ("zzzz", "미지원 문서 요소")])
+@pytest.mark.parametrize(("control", "label"), [("pgct", "쪽 번호 제어"), ("zzzz", "미지원 문서 요소")])
 def test_hwp_unsupported_error_names_detected_feature(control, label):
     model = {"sections": [{"paragraphs": [{
         "chars": [{"Text": "본문"}, {"ExtCtrl": {"ctrl_index": 0}}],
@@ -348,3 +348,82 @@ def test_hwp_row_height_is_minimum_and_cells_keep_vertical_alignment(client, hwp
     doc = Document(BytesIO(client.get(job["links"]["download"]).content))
     assert all(row.height is not None and row.height_rule == 1 for row in doc.tables[0].rows)
     assert doc.tables[0].cell(0, 0).vertical_alignment == 1
+
+
+def _leading_table_page_number_model(hwp_samples, tmp_path, row: int) -> dict:
+    """실제 사용자 문서 형태: 구역 첫 표의 셀 안에 쪽 번호 컨트롤이 있다."""
+    def load(kind):
+        path = tmp_path / f"{kind}.json"
+        HwpCli().run(["convert", str(hwp_samples[kind]), "-o", str(path), "--embed-bin"], tmp_path)
+        return json.loads(path.read_text())
+
+    numbered = load("page_numbers")["sections"][0]["paragraphs"][0]
+    control = next(c for c in numbered["controls"] if "Generic" in c and c["Generic"]["ctrl_id"] == list(b"pgnp"))
+    model = load("table")
+    paragraphs = model["sections"][0]["paragraphs"]
+    table_index = next(i for i, p in enumerate(paragraphs) if any("Table" in c for c in p["controls"]))
+    # 표 앞 본문 텍스트를 비워 표가 구역 첫 내용이 되게 한다(구역 정의 컨트롤은 유지).
+    for paragraph in paragraphs[:table_index]:
+        paragraph["chars"] = [char for char in paragraph["chars"] if "Text" not in char]
+    table = next(c["Table"] for c in paragraphs[table_index]["controls"] if "Table" in c)
+    target = next(cell for cell in table["cells"] if cell["row"] == row and cell["col"] == 1)["paragraphs"][0]
+    target["controls"].append(copy.deepcopy(control))
+    target["chars"].insert(0, {"ExtCtrl": {"ctrl_index": len(target["controls"]) - 1}})
+    return model
+
+
+def test_hwp_page_number_in_leading_table_first_row_applies_to_section(hwp_samples, tmp_path):
+    analysis = HwpAnalyzer().inspect_model(_leading_table_page_number_model(hwp_samples, tmp_path, row=0))
+    placement = analysis.engine_data["page_numbers"][0]
+    assert placement["position"] == 5 and placement["format"] == "decimal"
+
+
+def test_hwp_page_number_in_later_table_row_is_still_rejected(hwp_samples, tmp_path):
+    with pytest.raises(DomainError) as error:
+        HwpAnalyzer().inspect_model(_leading_table_page_number_model(hwp_samples, tmp_path, row=1))
+    assert error.value.code == "UNSUPPORTED_FEATURE"
+
+
+@pytest.mark.parametrize("name, data, warning", [
+    ("%fmu", "00000000081b003d00530055004d0028003f0032003a003f00350029", "계산식"),
+    ("pghd", "20000000", "쪽 감추기"),
+    ("nwno", "000000000100", "새 번호"),
+])
+def test_hwp_approximated_page_controls_convert_with_visible_warning(hwp_samples, tmp_path, name, data, warning):
+    """사용자 결정(2026-11-21): 계산식은 현재 결과 값, 쪽 감추기·새 번호는 무시하되 화면에 경고한다."""
+    path = tmp_path / "text.json"
+    HwpCli().run(["convert", str(hwp_samples["text"]), "-o", str(path), "--embed-bin"], tmp_path)
+    model = json.loads(path.read_text())
+    target = model["sections"][0]["paragraphs"][-1]
+    target["controls"].append({"Generic": {"ctrl_id": list(name.encode("latin1")), "data": data,
+                                           "paragraph_lists": [], "extras": []}})
+    target["chars"].insert(0, {"ExtCtrl": {"ctrl_index": len(target["controls"]) - 1}})
+    analysis = HwpAnalyzer().inspect_model(model)
+    assert any(warning in text for text in analysis.warnings), analysis.warnings
+
+
+def test_hwp_picture_cell_fill_becomes_dominant_solid_color_with_warning(hwp_samples, tmp_path):
+    """사용자 문서의 장식 띠(그림 채우기 셀)는 주된 색 단색으로 근사하고 경고한다."""
+    import base64
+    import pymupdf
+    path = tmp_path / "table.json"
+    HwpCli().run(["convert", str(hwp_samples["table"]), "-o", str(path), "--embed-bin"], tmp_path)
+    model = json.loads(path.read_text())
+    image = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 4), False)
+    image.set_rect(image.irect, (0, 120, 192))
+    image.set_rect(pymupdf.IRect(30, 0, 40, 4), (80, 190, 235))  # 소수 색은 무시된다.
+    header = model["header"]
+    header["bin_data"].append({"attr": 33, "link_abs": None, "link_rel": None,
+                               "storage_id": 9, "extension": "png", "tail": ""})
+    model["bin_streams"].append({"name": "BIN0009.png", "data_b64": base64.b64encode(image.tobytes("png")).decode()})
+    bin_id = len(header["bin_data"])
+    base = copy.deepcopy(header["border_fills"][0])
+    header["border_fills"].append({**base, "fill_type": 2, "bg_color": None, "hatch": None,
+                                   "tail": (bytes([5, 0, 0, 0]) + bin_id.to_bytes(2, "little") + bytes(5)).hex()})
+    fill_index = len(header["border_fills"])
+    table = next(c["Table"] for p in model["sections"][0]["paragraphs"] for c in p["controls"] if "Table" in c)
+    table["cells"][0]["border_fill"] = fill_index
+    analysis = HwpAnalyzer().inspect_model(model)
+    resolved = resolve_fill(analysis.engine_data["border_fills"][fill_index - 1])
+    assert resolved == {"background": "0078C0", "approximation": "picture_fill_dominant_color"}
+    assert any("그림 채우기" in warning for warning in analysis.warnings), analysis.warnings

@@ -27,6 +27,38 @@ FEATURE_LABELS = {
     "unreferenced_control": "연결되지 않은 문서 개체",
     "unresolved_control": "참조를 확인할 수 없는 문서 개체",
 }
+# 정확히 보존하지 못하지만 사용자가 경고와 함께 근사 변환을 선택한 컨트롤(2026-11-21).
+APPROXIMATED_CONTROLS = {
+    "%fmu": "서식 변경: 표 계산식은 원본에 저장된 현재 결과 값을 일반 텍스트로 옮겼습니다. Word에서 값을 바꿔도 합계가 다시 계산되지 않습니다.",
+    "pghd": "서식 변경: 쪽 감추기(특정 쪽의 쪽 번호·머리말 숨김)는 보존하지 않았습니다. 원본에서 숨긴 쪽에도 쪽 번호가 표시될 수 있습니다.",
+    "nwno": "서식 변경: 새 번호 지정(본문 중간에서 쪽 번호 다시 시작)은 보존하지 않았습니다. 해당 위치 이후 쪽 번호가 원본과 다를 수 있습니다.",
+}
+
+
+def dominant_color(data: bytes) -> int:
+    """이미지에서 가장 넓은 색 영역의 평균색을 HWP COLORREF(0x00BBGGRR)로 돌려준다."""
+    import pymupdf
+    if not data.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"BM")):
+        raise DomainError("UNSUPPORTED_FEATURE", "이 표 그림 채우기 이미지 형식은 아직 지원하지 않습니다.")
+    try:
+        pixmap = pymupdf.Pixmap(data)
+        if pixmap.colorspace is None or pixmap.colorspace.n != 3 or pixmap.alpha:
+            pixmap = pymupdf.Pixmap(pymupdf.csRGB, pixmap, 0)
+    except (RuntimeError, ValueError) as exc:
+        raise DomainError("UNSUPPORTED_FEATURE", "표 그림 채우기 이미지를 읽을 수 없습니다.") from exc
+    if pixmap.width * pixmap.height > 25_000_000:
+        raise DomainError("RESOURCE_LIMIT", "표 그림 채우기 이미지가 처리 크기 제한을 초과했습니다.")
+    samples = pixmap.samples
+    step = max(1, (pixmap.width * pixmap.height) // 40_000) * 3
+    buckets: dict[tuple, list[int]] = {}
+    for offset in range(0, len(samples) - 2, step):
+        red, green, blue = samples[offset], samples[offset + 1], samples[offset + 2]
+        total = buckets.setdefault((red >> 4, green >> 4, blue >> 4), [0, 0, 0, 0])
+        total[0] += red; total[1] += green; total[2] += blue; total[3] += 1
+    if not buckets:
+        raise DomainError("UNSUPPORTED_FEATURE", "표 그림 채우기 이미지가 비어 있습니다.")
+    red, green, blue, count = max(buckets.values(), key=lambda total: total[3])
+    return round(red / count) | round(green / count) << 8 | round(blue / count) << 16
 
 
 # 셀 LIST_HEADER 속성의 '안 여백 지정' 비트(HWPX hasMargin). 꺼져 있으면 표의 안 여백을 쓴다.
@@ -124,11 +156,13 @@ class HwpAnalyzer:
                     "원본 글꼴 이름·크기와 기본 문단/표를 옮기며 페이지 배치·장식·자동 번호의 동일함은 보장하지 않습니다.",
                     "이미지는 인라인으로 배치하며 회전·자르기 효과는 보존되지 않을 수 있습니다. Word에 원본 글꼴이 없으면 대체됩니다."]
 
-        def walk(items: list, depth: int = 0):
+        def walk(items: list, depth: int = 0, leading: bool = True):
+            # leading: 구역 첫 쪽 시작임이 확실한 위치. 본문 앞 첫 표의 첫 행 셀만 해당한다.
             nonlocal paragraphs, placement, section_has_text
             if depth > 32:
                 raise DomainError("RESOURCE_LIMIT", "HWP 표 중첩 깊이가 제한을 초과했습니다.")
             for paragraph in items:
+                at_start = not section_has_text if depth == 0 else leading
                 if paragraph.get("extras"):
                     unsupported.add("opaque_paragraph_record")
                 paragraphs += 1
@@ -166,7 +200,10 @@ class HwpAnalyzer:
                     if "SectionDef" in control:
                         page = control["SectionDef"].get("page")
                         if page:
-                            sizes.append((page["width"] / 100, page["height"] / 100))
+                            short, long = sorted((page["width"], page["height"]))
+                            # 용지 속성 bit0 = 가로. 세로 치수로 저장되므로 실제 쪽 방향으로 기록한다.
+                            sizes.append((long / 100, short / 100) if page.get("attr", 0) & 1
+                                         else (page["width"] / 100, page["height"] / 100))
                     elif "Table" in control:
                         table = control["Table"]
                         if not 0 < table["rows"] <= 1000 or not 0 < table["cols"] <= 100:
@@ -187,7 +224,7 @@ class HwpAnalyzer:
                              "margins": effective_cell_margins(cell, table)}
                             for cell in table["cells"]]})
                         for cell in table["cells"]:
-                            walk(cell["paragraphs"], depth + 1)
+                            walk(cell["paragraphs"], depth + 1, at_start and cell["row"] == 0)
                     elif "Picture" in control:
                         pictures.append(control["Picture"])
                     elif "Generic" in control:
@@ -197,9 +234,13 @@ class HwpAnalyzer:
                             pass
                         elif name == "bokm" and not generic.get("paragraph_lists"):
                             warnings.append("책갈피 링크 위치는 보존하지 않습니다.")
+                        elif name in APPROXIMATED_CONTROLS and not generic.get("paragraph_lists"):
+                            # 사용자 결정(2026-11-21): 근사 변환하되 화면 경고로 손실을 알린다.
+                            warnings.append(APPROXIMATED_CONTROLS[name])
                         elif name == "pgnp":
                             candidate = parse_page_number(generic)
-                            if depth or (section_has_text and candidate != placement):
+                            # 구역 첫 내용인 표의 첫 행 셀 안 설정은 구역 시작 설정과 같다(실제 공문 서식).
+                            if not at_start and candidate != placement:
                                 raise unsupported_page_number("표 안 또는 구역 본문 중간에서 번호 설정이 바뀝니다.")
                             placement = candidate
                         else:
@@ -231,15 +272,18 @@ class HwpAnalyzer:
         if not any(text.strip() for text in texts):
             raise DomainError("NO_EDITABLE_TEXT", "HWP에서 편집 가능한 본문 텍스트를 찾지 못했습니다.")
         image_hashes = self.picture_hashes(model, pictures)
-        fills = model["header"]["border_fills"]
         used_fills = {cell["border_fill"] for table in tables for cell in table["cells"]}
+        fills = self.approximate_picture_fills(model, used_fills)
         approximated = set()
         for index in used_fills:
             if not 1 <= index <= len(fills):
                 raise DomainError("INVALID_DOCUMENT", "HWP 표 배경 참조가 올바르지 않습니다.")
-            if resolve_fill(fills[index - 1])["approximation"]:
-                approximated.add(index)
-        if approximated:
+            kind = resolve_fill(fills[index - 1])["approximation"]
+            if kind:
+                approximated.add(kind)
+        if "picture_fill_dominant_color" in approximated:
+            warnings.append("서식 변경: 표 셀의 그림 채우기 배경(장식 띠 등)을 이미지의 주된 색 단색으로 근사했습니다. 그림 무늬는 보존되지 않았습니다. 원본과 배경을 비교해 주세요.")
+        if "linear_gradient_midpoint" in approximated:
             warnings.append("서식 변경: 표의 두 색상 선형 그라데이션 배경을 중간색의 단색 배경으로 근사했습니다. 그라데이션 효과는 보존되지 않았습니다. 본문·표는 편집 가능하며 원본과 배경을 비교해 주세요.")
         fonts = sorted({font["name"] for group in model["header"]["fonts"] for font in group})
         start_numbers = model["header"].get("properties", {}).get("start_numbers", [1])
@@ -248,9 +292,42 @@ class HwpAnalyzer:
             warnings.append("쪽 번호는 Word 자동 PAGE 필드입니다. Word에서 필드 업데이트 후 배치와 번호를 확인하세요. 원본과 실제 페이지 나눔은 다를 수 있습니다.")
         return DocumentAnalysis(None, sizes, texts, fonts, len(tables), list(dict.fromkeys(warnings)), "hwp",
                                 {"tables": tables, "image_hashes": image_hashes, "sections": len(sections),
-                                 "border_fills": model["header"]["border_fills"],
+                                 "border_fills": fills,
                                  "page_numbers": page_numbers, "page_start": page_start,
                                  "layout_model": model})
+
+    @staticmethod
+    def approximate_picture_fills(model: dict, used: set[int]) -> list[dict]:
+        """사용된 그림 채우기 셀 배경에 이미지 주된 색(approx_color)을 붙인 새 목록을 돌려준다."""
+        fills = model["header"]["border_fills"]
+        result = []
+        for number, fill in enumerate(fills, start=1):
+            if number not in used or fill.get("fill_type") != 2 or fill.get("hatch"):
+                result.append(fill)
+                continue
+            try:
+                # 그림 채우기: 유형(1)·밝기(1)·명암(1)·효과(1) 뒤 BinData ID(UINT16).
+                bin_id = int.from_bytes(bytes.fromhex(fill.get("tail") or "")[4:6], "little")
+            except ValueError as exc:
+                raise DomainError("UNSUPPORTED_FEATURE", "표 그림 채우기의 이미지 참조를 확인할 수 없습니다.") from exc
+            color = dominant_color(HwpAnalyzer.bin_item_bytes(model, bin_id))
+            result.append({**fill, "approx_color": color})
+        return result
+
+    @staticmethod
+    def bin_item_bytes(model: dict, bin_id: int) -> bytes:
+        items = model["header"]["bin_data"]
+        if not 1 <= bin_id <= len(items):
+            raise DomainError("UNSUPPORTED_FEATURE", "표 그림 채우기의 이미지 참조를 확인할 수 없습니다.")
+        item = items[bin_id - 1]
+        storage = item.get("storage_id")
+        if storage is None or item.get("link_abs") or item.get("link_rel"):
+            raise DomainError("UNSUPPORTED_FEATURE", "외부 링크 이미지는 지원하지 않습니다.")
+        expected = f'BIN{storage:04X}.{item.get("extension") or ""}'.casefold()
+        candidates = [entry["data_b64"] for entry in model["bin_streams"] if entry["name"].casefold() == expected]
+        if len(candidates) != 1:
+            raise DomainError("UNSUPPORTED_FEATURE", "표 그림 채우기의 이미지 참조를 확인할 수 없습니다.")
+        return base64.b64decode(candidates[0], validate=True)
 
     @staticmethod
     def picture_hashes(model: dict, pictures: list[dict]) -> list[str]:
