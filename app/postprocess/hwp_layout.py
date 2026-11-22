@@ -1,5 +1,6 @@
 """엔진이 생략한 빈 문단·쪽 나눔·줄 간격을 기존 텍스트 개체를 유지해 복원한다."""
 import unicodedata
+from copy import deepcopy
 
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -7,6 +8,14 @@ from docx.enum.section import WD_ORIENT
 from docx.shared import Pt
 
 from app.domain.errors import DomainError
+
+# 칸의 빈 공간이 이보다 크면(약 11mm, 두 줄) 최소 행 높이 대신 지울 수 있는 빈 줄로 둔다.
+MIN_BLANK_TWIPS = 640
+# 빈 줄 하나의 기준 높이(10pt × 160% = 16pt).
+BLANK_LINE_TWIPS = 320
+# Word는 같은 내용을 한글보다 조금 더 높게 그린다(대체 글꼴·표 테두리). 한 쪽을 거의 채운 칸의 빈 공간을
+# 그대로 되살리면 칸이 다음 쪽으로 넘치므로(사용자 문서 12쪽 → 15쪽) 빈 공간의 70%만 빈 줄로 둔다.
+BLANK_SPACE_RATIO = 0.7
 
 
 def compact(text):
@@ -32,7 +41,8 @@ def plain(paragraph):
 class HwpLayoutPostProcessor:
     def process(self, document, model):
         self.model = model
-        self.restored_empty = self.page_breaks = 0
+        self.restored_empty = self.page_breaks = self.blank_lines = 0
+        self.shrunk_tables = set()
         body = document.element.body
         chunks, boundaries, current = [], [], []
         for child in body:
@@ -77,7 +87,8 @@ class HwpLayoutPostProcessor:
             if page:
                 self.apply_page(section, page)
         self.disable_east_asian_autospace(document)
-        return {"restored_empty_paragraphs": self.restored_empty, "explicit_page_breaks": self.page_breaks}
+        return {"restored_empty_paragraphs": self.restored_empty, "explicit_page_breaks": self.page_breaks,
+                "editable_blank_lines": self.blank_lines}
 
     @staticmethod
     def filler_page_starts(paragraphs):
@@ -186,11 +197,29 @@ class HwpLayoutPostProcessor:
                  for _, shape_id in source["char_shape_runs"] if 0 <= shape_id < len(shapes)]
         return max(sizes, default=0)
 
-    def blocks(self, paragraphs, targets):
-        result, cursor = [], 0
+    def page_after_shrunk_box(self, previous, current):
+        """앞 문단의 표 칸 빈 공간을 지울 수 있는 빈 줄로 바꿨고, 한글에서는 현재 문단이 새 쪽에서 시작했는가.
+
+        한 쪽을 채우던 칸이 Word에서 짧아지면 다음 표가 같은 쪽으로 올라온다. 같은 쪽이면 v_pos가
+        앞 문단 끝 이상이므로, 그보다 작으면 원본의 쪽 시작이다.
+        """
+        if previous is None or current["header"]["break_type"] & 4:
+            return False
+        shrunk = getattr(self, "shrunk_tables", set())
+        if not any(id(control["Table"]) in shrunk for control in previous["controls"] if "Table" in control):
+            return False
+        before, after = previous.get("line_segs"), current.get("line_segs")
+        if not before or not after or "line_height" not in before[-1]:
+            return False
+        return after[0]["v_pos"] < before[-1]["v_pos"] + before[-1]["line_height"]
+
+    def blocks(self, paragraphs, targets, nested=False):
+        result, cursor, previous = [], 0, None
         for source in paragraphs:
             text, inline = plain(source)
             tables = [control["Table"] for control in source["controls"] if "Table" in control]
+            new_page = not nested and self.page_after_shrunk_box(previous, source)
+            previous = source
             if inline:
                 if cursor >= len(targets) or targets[cursor].tag != qn("w:p"):
                     raise DomainError("VALIDATION_FAILED", "원본 문단과 Word 문단의 순서가 다릅니다.")
@@ -199,24 +228,28 @@ class HwpLayoutPostProcessor:
                 if compact(text) != compact(actual):
                     raise DomainError("VALIDATION_FAILED", "문단의 내용을 안전하게 대응하지 못했습니다.")
                 cursor += 1
-                self.paragraph(target, source)
+                self.paragraph(target, source, page_start=True if new_page else None)
                 result.append(target)
+                new_page = False
             elif not tables or source["header"]["break_type"] & 4:
                 target = OxmlElement("w:p")
-                self.paragraph(target, source, anchor=bool(tables))
+                self.paragraph(target, source, anchor=bool(tables), page_start=True if new_page else None)
                 result.append(target)
                 self.restored_empty += 1
+                new_page = False
             for table in tables:
                 if cursor >= len(targets) or targets[cursor].tag != qn("w:tbl"):
                     raise DomainError("VALIDATION_FAILED", "원본 표와 Word 표의 순서가 다릅니다.")
                 target = targets[cursor]
                 cursor += 1
                 self.table(target, table)
-                if result and result[-1].tag == qn("w:tbl"):
+                if new_page or (result and result[-1].tag == qn("w:tbl")):
                     # Word는 사이에 문단이 없는 두 표를 하나로 합친다. 높이 없는 구분 문단으로 나눠 둔다.
+                    # 원본에서 새 쪽이던 표는 이 높이 없는 문단에 쪽 나누기를 둔다.
                     separator = OxmlElement("w:p")
-                    self.paragraph(separator, source, anchor=True, page_start=False, filler=False)
+                    self.paragraph(separator, source, anchor=True, page_start=new_page, filler=False)
                     result.append(separator)
+                    new_page = False
                 result.append(target)
         for extra in targets[cursor:]:
             if extra.tag != qn("w:p") or len(extra):
@@ -272,17 +305,72 @@ class HwpLayoutPostProcessor:
         section.page_width = Pt((long if landscape else short) / 100)
         section.page_height = Pt((short if landscape else long) / 100)
 
+    @staticmethod
+    def content_height(cell):
+        """칸 안 문단이 한글에서 실제 차지한 높이(HWPUNIT). 줄 배치 정보가 없으면 None."""
+        segments = [segment for paragraph in cell["paragraphs"] for segment in paragraph.get("line_segs") or []]
+        if not segments or any("line_height" not in segment for segment in segments):
+            return None
+        top = min(segment["v_pos"] for segment in segments)
+        return max(segment["v_pos"] + segment["line_height"] for segment in segments) - top
+
+    def blank_space(self, cells):
+        """행 높이 중 내용이 채우지 않은 빈 공간을 (그 공간을 담을 칸, twips)로 찾는다.
+
+        이 공간을 Word 최소 행 높이로 쓰면 내용을 지워도 칸이 줄지 않아 공간을 없앨 수 없다.
+        """
+        needs = []
+        for cell in cells:
+            content = self.content_height(cell)
+            if content is None:
+                return None
+            margins = cell.get("margins") or [0, 0, 0, 0]
+            needs.append((content + margins[2] + margins[3], cell))
+        if not needs:
+            return None
+        need, owner = max(needs, key=lambda item: item[0])
+        slack = round((max(cell["height"] for cell in cells) - need) / 5 * BLANK_SPACE_RATIO)
+        return (owner, slack) if slack >= MIN_BLANK_TWIPS else None
+
+    @staticmethod
+    def add_blank_lines(cell, slack, valign, char_properties=None):
+        """빈 공간을 글을 쓰거나 지울 수 있는 빈 문단으로 칸 정렬 방향에 맞춰 채운다."""
+        count = max(1, round(slack / BLANK_LINE_TWIPS))
+        lines = [slack // count] * count
+        lines[-1] += slack - sum(lines)
+        fillers = []
+        for line in lines:
+            paragraph = OxmlElement("w:p")
+            properties = paragraph.get_or_add_pPr()
+            spacing = properties.get_or_add_spacing()
+            for name, value in (("w:before", "0"), ("w:after", "0"), ("w:line", str(max(1, line))), ("w:lineRule", "exact")):
+                spacing.set(qn(name), value)
+            if char_properties is not None:
+                properties.append(deepcopy(char_properties))
+            fillers.append(paragraph)
+        above = {"top": 0, "center": count // 2, "bottom": count}[valign]
+        first = next(child for child in cell if child.tag in (qn("w:p"), qn("w:tbl")))
+        for paragraph in fillers[:above]:
+            first.addprevious(paragraph)
+        for paragraph in fillers[above:]:
+            cell.append(paragraph)
+        return count
+
     def table(self, target, source):
         origins = {(cell["row"], cell["col"]): cell for cell in source["cells"]}
         for row_index, row in enumerate(target.findall(qn("w:tr"))):
-            heights = [cell["height"] for cell in source["cells"] if cell["row"] == row_index and cell["row_span"] == 1]
+            row_cells = [cell for cell in source["cells"] if cell["row"] == row_index and cell["row_span"] == 1]
+            heights = [cell["height"] for cell in row_cells]
             if heights:
                 properties = row.get_or_add_trPr()
                 for old in properties.findall(qn("w:trHeight")):
                     properties.remove(old)
             limit = getattr(self, "body_height", None)
+            blank = self.blank_space(row_cells) if heights and not (limit and max(heights) > limit) else None
             # 한 쪽보다 큰 높이는 여러 쪽에 걸친 행의 합계다. 최소 높이로 쓰면 Word가 행을 다음 쪽으로 민다.
-            if heights and not (limit and max(heights) > limit):
+            if blank:
+                self.shrunk_tables = getattr(self, "shrunk_tables", set()) | {id(source)}
+            if heights and not (limit and max(heights) > limit) and blank is None:
                 height = OxmlElement("w:trHeight")
                 height.set(qn("w:val"), str(max(1, round(max(heights) / 5))))
                 height.set(qn("w:hRule"), "atLeast")
@@ -295,7 +383,7 @@ class HwpLayoutPostProcessor:
                 if not original:
                     continue
                 blocks = [child for child in cell if child.tag in (qn("w:p"), qn("w:tbl"))]
-                restored = self.blocks(original["paragraphs"], blocks)
+                restored = self.blocks(original["paragraphs"], blocks, nested=True)
                 for child in blocks:
                     cell.remove(child)
                 cell.extend(restored)
@@ -304,6 +392,11 @@ class HwpLayoutPostProcessor:
                 properties = cell.find(qn("w:tcPr"))
                 for prior in properties.findall(qn("w:vAlign")):
                     properties.remove(prior)
+                valign = {0: "top", 1: "center", 2: "bottom"}.get((original["list_attr"] >> 5) & 3, "top")
                 align = OxmlElement("w:vAlign")
-                align.set(qn("w:val"), {0: "top", 1: "center", 2: "bottom"}.get((original["list_attr"] >> 5) & 3, "top"))
+                align.set(qn("w:val"), valign)
                 properties.append(align)
+                if blank and blank[0] is original:
+                    last = cell.findall(qn("w:p"))[-1].find(qn("w:pPr"))
+                    char_properties = last.find(qn("w:rPr")) if last is not None else None
+                    self.blank_lines = getattr(self, "blank_lines", 0) + self.add_blank_lines(cell, blank[1], valign, char_properties)
