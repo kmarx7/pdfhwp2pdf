@@ -56,7 +56,8 @@ PDF·HWP·HWPX를 실제로 편집 가능한 DOCX로 변환한다. 본문 페이
 - 후속 사용자 평가는 `native-embedded` 후보가 원본과 비슷하게 잘 나왔다는 것이다. 후속 개선은 이 한글 뷰어 PDF 경유 + 글꼴 포함 후보를 기준으로 우선한다. 현재 Word 18쪽/원본 16쪽, 약 52MB이며 앱의 자동 HWP 경로에는 아직 연결되지 않았다. 사용자의 긍정 평가를 전체 후보 일괄 실패라는 이전 판단으로 덮어쓰지 않는다.
 - 2026-10-25 단계 마무리 상태는 `docs/HANDOFF.md`를 우선 확인한다. `feat/native-pdf-docx-workflow`에서 선호 경로를 `scripts/convert_reference_pdf.py`와 로컬 글꼴 포함 모듈로 정식화했다. 전체 97개 테스트 통과, 실제 기준 후보와 본문 XML·글꼴 연결 데이터 동일함을 확인했다. PDF 출력은 수동, 후속 처리는 CLI이며 웹앱 자동 HWP 경로는 아니다. 글꼴 플래그 거부와 기존 출력/원본 보존을 유지한다.
 
-- 2026-11-20 최신 결과는 161 passed, 6 warnings다.
+- 2026-11-23 최신 결과는 185 passed, 6 warnings다.
+- HWP 칸 높이를 Word 최소 행 높이로 그대로 쓰면 내용을 지워도 칸이 줄지 않아 편집할 수 없다. 빈 공간이 큰 행은 `hwp_layout.blank_space`가 최소 높이 대신 삭제 가능한 빈 줄(공간의 70%)로 바꾸고, 원본에서 새 쪽이던 다음 표에 쪽 나누기를 둔다. 70%를 100%로 올리면 Word에서 쪽이 넘친다(12 → 15쪽).
 - HWP 내어쓰기(음수 indent)는 첫 줄을 왼쪽 여백에 두고 둘째 줄부터 들인다. Word `hanging`만 쓰면 첫 줄이 표 칸 왼쪽 밖으로 나가 잘리므로 `left`에 내어쓰기 폭을 더한다(`hwp_layout.indentation`).
 - HWP 셀은 LIST_HEADER `0x10000`(안 여백 지정)일 때만 자기 여백을 쓰고, 아니면 표의 `inner_margins`를 쓴다(`effective_cell_margins`). 셀 여백 0을 그대로 쓰면 글자가 칸 테두리에 붙는다.
 - HWP 퍼센트 줄 간격은 글자 크기 기준이다(12pt × 160% = 19.2pt). Word `auto` 배수로 옮기면 글꼴 줄 높이(맑은 고딕 1.33배)가 다시 곱해져 줄이 약 33% 커진다. `hwp_layout`은 문단의 가장 큰 글자 크기로 pt 고정 높이를 계산하고, 그림이 든 문단만 `atLeast`로 둔다. 작업 실행 중 50ms마다 도는 감시 코드는 worker가 파일을 지우거나 옮기는 경합을 견뎌야 한다. `directory_bytes`의 `FileNotFoundError`가 정상 HWP 작업을 `INTERNAL_ERROR`로 실패시킨 간헐 오류를 수정했으며 `tests/test_workspace_race.py`로 회귀를 막는다.
